@@ -979,7 +979,8 @@
             }
 
             #btnLogout span {
-                display: none; /* Esconde o texto "Sair" */
+                display: none;
+                /* Esconde o texto "Sair" */
             }
 
             #btnLogout .fa-sign-out-alt {
@@ -1212,7 +1213,8 @@
                 <div class="section-header">
                     <h2>Relatórios</h2>
                 </div>
-                <p style="margin-bottom: 2rem; color: var(--muted-text);">Selecione um relatório para gerar e baixar como
+                <p style="margin-bottom: 2rem; color: var(--muted-text);">Selecione um relatório para gerar e baixar
+                    como
                     uma planilha CSV.</p>
                 <div class="reports-grid">
                     <div class="report-card"
@@ -1478,12 +1480,23 @@
             if (filterValue) {
                 query = query.where('cliente_id', '==', filterValue);
             }
-            const snapshot = await query.orderBy(textCol).get();
+            const snapshot = await query.get();
 
             if (!snapshot.empty) {
+                const options = [];
                 snapshot.forEach(doc => {
-                    const data = doc.data();
-                    select.innerHTML += `<option value="${doc.id}">${data[textCol]}</option>`;
+                    options.push({ id: doc.id, data: doc.data() });
+                });
+
+                // Ordena os resultados pelo campo de texto (ex: 'numero' do caso)
+                options.sort((a, b) => {
+                    const valA = a.data[textCol] || '';
+                    const valB = b.data[textCol] || '';
+                    return valA.localeCompare(valB, undefined, { numeric: true, sensitivity: 'base' });
+                });
+
+                options.forEach(opt => {
+                    select.innerHTML += `<option value="${opt.id}">${opt.data[textCol]}</option>`;
                 });
             }
             if (selectedValue) select.value = selectedValue;
@@ -1951,7 +1964,7 @@
         }
 
         /* ------------- LISTA DE FUNÇÕES DE RENDERIZAÇÃO ------------- */
-        const renderFunctions = [loadDashboard, renderCasos, renderClientes, renderDocumentos, renderAgenda, renderTarefas, loadFinanceiro, renderCasosPorCliente, () => {}];
+        const renderFunctions = [loadDashboard, renderCasos, renderClientes, renderDocumentos, renderAgenda, renderTarefas, loadFinanceiro, renderCasosPorCliente, () => { }];
 
         /* ------------- UI & NAVEGAÇÃO ------------- */
         function abrirTab(index) {
