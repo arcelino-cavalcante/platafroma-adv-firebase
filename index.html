@@ -941,6 +941,37 @@
             font-size: 1.1rem;
         }
 
+        /* Estilos para o Spinner e Overlay */
+        .spinner-overlay {
+            display: none; /* Começa escondido */
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.6);
+            z-index: 9999;
+            justify-content: center;
+            align-items: center;
+            flex-direction: column;
+            color: white;
+            font-family: sans-serif;
+        }
+
+        .spinner-overlay.show {
+            display: flex; /* Mostra o spinner */
+        }
+
+        .spinner-overlay .spinner {
+            border: 6px solid #f3f3f3;
+            border-top: 6px solid var(--cor-dourado);
+            border-radius: 50%;
+            width: 50px;
+            height: 50px;
+            animation: spin 1.5s linear infinite;
+            margin-bottom: 15px;
+        }
+
         @media(max-width: 1024px) {
             header nav {
                 display: none;
@@ -991,6 +1022,11 @@
 </head>
 
 <body>
+
+    <div id="spinner-overlay" class="spinner-overlay">
+        <div class="spinner"></div>
+        <p>Aguarde...</p>
+    </div>
 
     <div id="login-panel">
         <h2><i class="fa-solid fa-scale-balanced"></i> Login do Advogado</h2>
@@ -1458,6 +1494,20 @@
         const fmtDate = (d) => d ? new Date(d).toLocaleDateString('pt-BR', { timeZone: 'UTC' }) : '';
         const fmtDateTime = (d) => d ? new Date(d).toLocaleString('pt-BR', { timeZone: 'UTC' }) : '';
         const fmtCurrency = (v) => Number(v || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+
+        // Funções para controlar o spinner
+        const spinnerOverlay = document.getElementById('spinner-overlay');
+
+        function showSpinner(message = 'Aguarde...') {
+            const overlay = document.getElementById('spinner-overlay');
+            overlay.querySelector('p').textContent = message;
+            overlay.style.display = 'flex';
+        }
+
+        function hideSpinner() {
+            const overlay = document.getElementById('spinner-overlay');
+            overlay.style.display = 'none';
+        }
 
         function showNotif(type, msg) {
             const icons = { success: 'fa-check-circle', danger: 'fa-times-circle', info: 'fa-info-circle' };
@@ -1984,20 +2034,21 @@
 
         async function delRow(collectionName, id, renderCallback) {
             if (confirm("Tem certeza que deseja excluir este registro? A ação não pode ser desfeita.")) {
-                if (collectionName === 'docs') {
-                    try {
-                        const docRef = await db.collection('docs').doc(id).get();
-                        if (docRef.exists) {
-                            const docData = docRef.data();
-                            if (docData.path_arquivo) {
-                                const storageRef = storage.ref(docData.path_arquivo);
-                                await storageRef.delete();
-                            }
-                        }
-                    } catch (e) { console.error("Documento não encontrado no storage, prosseguindo."); }
-                }
-
+                showSpinner('Excluindo registro...');
                 try {
+                    if (collectionName === 'docs') {
+                        try {
+                            const docRef = await db.collection('docs').doc(id).get();
+                            if (docRef.exists) {
+                                const docData = docRef.data();
+                                if (docData.path_arquivo) {
+                                    const storageRef = storage.ref(docData.path_arquivo);
+                                    await storageRef.delete();
+                                }
+                            }
+                        } catch (e) { console.error("Documento não encontrado no storage, prosseguindo."); }
+                    }
+
                     await db.collection(collectionName).doc(id).delete();
                     showNotif('success', 'Registro excluído.');
                     if (renderCallback) renderCallback();
@@ -2005,6 +2056,8 @@
                 } catch (error) {
                     showNotif('danger', 'Erro ao excluir: ' + error.message);
                     console.error(error);
+                } finally {
+                    hideSpinner();
                 }
             }
         }
@@ -2030,6 +2083,7 @@
 
         async function salvarCliente(event) {
             event.preventDefault();
+            showSpinner('Salvando cliente...');
             const id = $('#cliente-id').value;
             const record = {
                 nome: $('#cliente-nome').value,
@@ -2037,7 +2091,10 @@
                 fone: $('#cliente-fone').value,
                 notas: $('#cliente-notas').value,
             };
-            if (!record.nome) return showNotif('danger', 'O nome do cliente é obrigatório.');
+            if (!record.nome) {
+                hideSpinner();
+                return showNotif('danger', 'O nome do cliente é obrigatório.');
+            }
 
             try {
                 if (id) {
@@ -2051,6 +2108,8 @@
                 loadDashboard();
             } catch (error) {
                 showNotif('danger', 'Erro: ' + error.message);
+            } finally {
+                hideSpinner();
             }
         }
 
@@ -2079,6 +2138,7 @@
 
         async function salvarCaso(event) {
             event.preventDefault();
+            showSpinner('Salvando caso...');
             const id = $('#caso-id').value;
             const record = {
                 cliente_id: $('#caso-cliente').value,
@@ -2088,7 +2148,10 @@
                 data: $('#caso-data').value,
                 status: $('#caso-status').value,
             };
-            if (!record.cliente_id || !record.numero) return showNotif('danger', 'Cliente e Nº do Processo são obrigatórios.');
+            if (!record.cliente_id || !record.numero) {
+                hideSpinner();
+                return showNotif('danger', 'Cliente e Nº do Processo são obrigatórios.');
+            }
 
             try {
                 if (id) {
@@ -2102,6 +2165,8 @@
                 loadDashboard();
             } catch (error) {
                 showNotif('danger', 'Erro: ' + error.message);
+            } finally {
+                hideSpinner();
             }
         }
 
@@ -2117,7 +2182,10 @@
             const file = $('#doc-file').files[0];
             const titulo = $('#doc-titulo').value;
             const clienteId = $('#doc-cliente').value;
-            if (!file || !titulo || !clienteId) return showNotif('danger', 'Cliente, título e arquivo são obrigatórios.');
+            if (!file || !titulo || !clienteId) {
+                return showNotif('danger', 'Cliente, título e arquivo são obrigatórios.');
+            }
+            showSpinner('Salvando documento...');
 
             const sanitizedFileName = file.name.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-zA-Z0-9._-]/g, '_').replace(/__+/g, '_');
             const filePath = `documentos/${Date.now()}-${sanitizedFileName}`;
@@ -2143,6 +2211,8 @@
                 renderDocumentos();
             } catch (error) {
                 showNotif('danger', 'Erro ao salvar documento: ' + error.message);
+            } finally {
+                hideSpinner();
             }
         }
 
@@ -2183,6 +2253,7 @@
 
         async function salvarEvento(event) {
             event.preventDefault();
+            showSpinner('Salvando evento...');
             const id = $('#evento-id').value;
             const record = {
                 cliente_id: $('#evento-cliente').value || null,
@@ -2194,7 +2265,10 @@
                 tipo_evento: $('#evento-tipo').value,
                 local: $('#evento-local').value
             };
-            if (!record.titulo || !record.datahora || !record.tipo_evento) return showNotif('danger', 'Título, Data/Hora e Tipo são obrigatórios.');
+            if (!record.titulo || !record.datahora || !record.tipo_evento) {
+                hideSpinner();
+                return showNotif('danger', 'Título, Data/Hora e Tipo são obrigatórios.');
+            }
 
             try {
                 if (id) {
@@ -2208,6 +2282,8 @@
                 loadDashboard();
             } catch (error) {
                 showNotif('danger', 'Erro: ' + error.message);
+            } finally {
+                hideSpinner();
             }
         }
 
@@ -2238,6 +2314,7 @@
 
         async function salvarTarefa(event) {
             event.preventDefault();
+            showSpinner('Salvando tarefa...');
             const id = $('#tarefa-id').value;
             const record = {
                 descricao: $('#tarefa-descricao').value,
@@ -2247,7 +2324,10 @@
                 caso_id: $('#tarefa-caso').value || null,
                 status: 'Pendente'
             };
-            if (!record.descricao) return showNotif('danger', 'A descrição da tarefa é obrigatória.');
+            if (!record.descricao) {
+                hideSpinner();
+                return showNotif('danger', 'A descrição da tarefa é obrigatória.');
+            }
 
             try {
                 if (id) {
@@ -2260,16 +2340,21 @@
                 renderTarefas();
             } catch (error) {
                 showNotif('danger', 'Erro: ' + error.message);
+            } finally {
+                hideSpinner();
             }
         }
 
         async function concluirTarefa(id, isChecked) {
+            showSpinner('Atualizando tarefa...');
             try {
                 await db.collection('tarefas').doc(id).update({ status: isChecked ? 'Concluída' : 'Pendente' });
                 showNotif('success', `Tarefa ${isChecked ? 'concluída' : 'marcada como pendente'}.`);
                 renderTarefas();
             } catch (error) {
                 showNotif('danger', 'Erro ao atualizar tarefa: ' + error.message);
+            } finally {
+                hideSpinner();
             }
         }
 
@@ -2302,6 +2387,7 @@
 
         async function salvarFin(event) {
             event.preventDefault();
+            showSpinner('Salvando lançamento...');
             const id = $('#fin-id').value;
             const record = {
                 tipo: $('#fin-tipo').value,
@@ -2313,7 +2399,10 @@
                 cliente_id: $('#fin-cliente').value || null,
                 caso_id: $('#fin-caso').value || null,
             };
-            if (!record.descricao || !record.valor || !record.data) return showNotif('danger', 'Descrição, valor e data são obrigatórios.');
+            if (!record.descricao || !record.valor || !record.data) {
+                hideSpinner();
+                return showNotif('danger', 'Descrição, valor e data são obrigatórios.');
+            }
 
             try {
                 if (id) {
@@ -2327,12 +2416,14 @@
                 loadDashboard();
             } catch (error) {
                 showNotif('danger', 'Erro: ' + error.message);
+            } finally {
+                hideSpinner();
             }
         }
 
         /* ------------- RELATÓRIOS ------------- */
         async function gerarRelatorio(collectionName, fileName, columns) {
-            showNotif('info', `Gerando relatório de ${collectionName}...`);
+            showSpinner(`Gerando relatório de ${collectionName}...`);
             try {
                 const snapshot = await db.collection(collectionName).get();
                 if (snapshot.empty) {
@@ -2390,6 +2481,8 @@
             } catch (error) {
                 console.error("Erro ao gerar relatório:", error);
                 showNotif('danger', 'Falha ao gerar relatório: ' + error.message);
+            } finally {
+                hideSpinner();
             }
         }
 
@@ -2445,7 +2538,9 @@
                 erroDiv.style.display = 'block';
                 return;
             }
+            showSpinner('Entrando...');
 
+            let userFound = false;
             try {
                 const snapshot = await db.collection('users').where('usuario', '==', usuario).get();
                 if (snapshot.empty) {
@@ -2454,7 +2549,6 @@
                     return;
                 }
 
-                let userFound = false;
                 snapshot.forEach(doc => {
                     if (doc.data().senha === senha) {
                         userFound = true;
@@ -2471,6 +2565,10 @@
                 console.error("Erro no login:", error);
                 erroDiv.innerText = 'Ocorreu um erro ao tentar fazer login.';
                 erroDiv.style.display = 'block';
+            } finally {
+                if (!userFound) {
+                    hideSpinner();
+                }
             }
         }
 
@@ -2492,7 +2590,7 @@
                 const btnLogin = $('#btnLogin');
                 if (btnLogin) btnLogin.addEventListener('click', handleLogin);
             }
-        });
+        })
 
     </script>
 </body>
