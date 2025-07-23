@@ -1691,11 +1691,13 @@
                 }
             }
 
-            table.innerHTML = `<table><thead><tr><th>Nº Processo</th><th>Cliente</th><th>Partes</th><th>Status</th><th>Ações</th></tr></thead><tbody>
+            table.innerHTML = `<table><thead><tr><th>Nº Processo</th><th>Cliente</th><th>Partes</th><th>Advogado Responsável</th><th>Data de Abertura</th><th>Status</th><th>Ações</th></tr></thead><tbody>
             ${rows.map(r => `<tr>
                 <td data-label="Nº Processo">${r.numero}</td>
                 <td data-label="Cliente">${r.clienteNome}</td>
                 <td data-label="Partes">${r.partes || ''}</td>
+                <td data-label="Advogado Responsável">${r.responsavel || ''}</td>
+                <td data-label="Data de Abertura">${fmtDate(r.data)}</td>
                 <td data-label="Status"><span class="badge ${r.status}">${r.status}</span></td>
                 <td data-label="Ações"><div class="actions">
                     <button onclick="abrirModalCaso('${r.id}')" title="Editar"><i class="fa fa-edit"></i></button>
@@ -1723,11 +1725,12 @@
                     (r.email && r.email.toLowerCase().includes(busca)) ||
                     (r.fone && r.fone.toLowerCase().includes(busca)));
 
-            table.innerHTML = `<table><thead><tr><th>Nome</th><th>E-mail</th><th>Telefone</th><th>Ações</th></tr></thead><tbody>
+            table.innerHTML = `<table><thead><tr><th>Nome</th><th>E-mail</th><th>Telefone</th><th>Anotações / Preferências</th><th>Ações</th></tr></thead><tbody>
             ${rows.map(r => `<tr>
                 <td data-label="Nome">${r.nome}</td>
                 <td data-label="E-mail">${r.email || ''}</td>
                 <td data-label="Telefone">${r.fone || ''}</td>
+                <td data-label="Anotações / Preferências">${r.notas || ''}</td>
                 <td data-label="Ações"><div class="actions">
                     <button onclick="abrirModalCliente('${r.id}')" title="Editar"><i class="fa fa-edit"></i></button>
                     <button onclick="delRow('clientes', '${r.id}', renderClientes)" title="Excluir"><i class="fa fa-trash"></i></button>
@@ -1831,12 +1834,14 @@
                 rows.push(r);
             }
 
-            table.innerHTML = `<table><thead><tr><th>Evento/Prazo</th><th>Tipo</th><th>Cliente/Caso</th><th>Data/Hora</th><th>Status</th><th>Ações</th></tr></thead><tbody>
+            table.innerHTML = `<table><thead><tr><th>Evento/Prazo</th><th>Tipo</th><th>Cliente/Caso</th><th>Data/Hora</th><th>Local / Link</th><th>Descrição</th><th>Status</th><th>Ações</th></tr></thead><tbody>
             ${rows.map(r => `<tr>
                 <td data-label="Evento">${r.titulo}</td>
                 <td data-label="Tipo">${r.tipo_evento}</td>
                 <td data-label="Cliente/Caso">${r.clienteNome}${r.casoNumero ? ` / ${r.casoNumero}` : ''}</td>
                 <td data-label="Data/Hora">${fmtDateTime(r.datahora)}</td>
+                <td data-label="Local / Link">${r.local || ''}</td>
+                <td data-label="Descrição">${r.descricao || ''}</td>
                 <td data-label="Status"><span class="badge ${r.status}">${r.status}</span></td>
                 <td data-label="Ações"><div class="actions">
                     <button onclick="abrirModalEvento('${r.id}')" title="Editar"><i class="fa fa-edit"></i></button>
