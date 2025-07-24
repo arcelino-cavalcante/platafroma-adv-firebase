@@ -941,9 +941,38 @@
             font-size: 1.1rem;
         }
 
+        .pagination-container {
+            display: flex;
+            justify-content: center;
+            gap: 0.5rem;
+            margin-top: 1.5rem;
+        }
+
+        .pagination-container button {
+            background: var(--cor-bege-claro);
+            border: 1px solid var(--border);
+            color: var(--dark-text);
+            padding: .5rem 1rem;
+            border-radius: .5rem;
+            cursor: pointer;
+            transition: all var(--transition);
+        }
+
+        .pagination-container button:hover {
+            background: var(--accent);
+            color: var(--cor-texto-escuro);
+        }
+
+        .pagination-container button.active {
+            background: var(--main);
+            color: var(--white);
+            border-color: var(--main);
+        }
+
         /* Estilos para o Spinner e Overlay */
         .spinner-overlay {
-            display: none; /* Começa escondido */
+            display: none;
+            /* Começa escondido */
             position: fixed;
             top: 0;
             left: 0;
@@ -959,7 +988,8 @@
         }
 
         .spinner-overlay.show {
-            display: flex; /* Mostra o spinner */
+            display: flex;
+            /* Mostra o spinner */
         }
 
         .spinner-overlay .spinner {
@@ -1137,6 +1167,7 @@
                         Caso</button>
                 </div>
                 <div class="table-wrapper" id="tabela-casos"></div>
+                <div id="paginacao-casos" class="pagination-container"></div>
             </div>
 
             <!-- TAB: CLIENTES -->
@@ -1151,6 +1182,7 @@
                         Cliente</button>
                 </div>
                 <div class="table-wrapper" id="tabela-clientes"></div>
+                <div id="paginacao-clientes" class="pagination-container"></div>
             </div>
 
             <!-- TAB: DOCUMENTOS -->
@@ -1169,6 +1201,7 @@
                         Documento</button>
                 </div>
                 <div class="table-wrapper" id="tabela-documentos"></div>
+                <div id="paginacao-documentos" class="pagination-container"></div>
             </div>
 
             <!-- TAB: AGENDA -->
@@ -1189,6 +1222,7 @@
                     </select>
                 </div>
                 <div class="table-wrapper" id="tabela-agenda"></div>
+                <div id="paginacao-agenda" class="pagination-container"></div>
             </div>
 
             <!-- TAB: TAREFAS -->
@@ -1212,6 +1246,7 @@
                     </select>
                 </div>
                 <div class="table-wrapper" id="tabela-tarefas"></div>
+                <div id="paginacao-tarefas" class="pagination-container"></div>
             </div>
 
             <!-- TAB: FINANCEIRO -->
@@ -1242,6 +1277,7 @@
                         onkeyup="renderCasosPorCliente()">
                 </div>
                 <div id="casos-por-cliente-container"></div>
+                <div id="paginacao-casos-por-cliente" class="pagination-container"></div>
             </div>
 
             <!-- TAB: RELATÓRIOS -->
@@ -1656,43 +1692,51 @@
             calendar.render();
         }
 
-        async function renderCasos() {
+        async function renderCasos(page = 1) {
             $('#tabela-casos').innerHTML = SPINNER_HTML;
             const busca = $('#buscar-caso').value.toLowerCase();
             const status = $('#filtro-caso-status').value;
             let query = db.collection('casos');
             if (status) query = query.where('status', '==', status);
 
+            // Fetch all clients to create a map
+            const clientesSnapshot = await db.collection('clientes').get();
+            const clientesMap = new Map();
+            clientesSnapshot.forEach(doc => {
+                clientesMap.set(doc.id, doc.data().nome);
+            });
+
             const snapshot = await query.orderBy('numero').get();
 
             const table = $('#tabela-casos');
+            const paginacaoContainer = $('#paginacao-casos');
+            paginacaoContainer.innerHTML = '';
+
             if (snapshot.empty) {
                 table.innerHTML = `<p style="text-align:center; padding: 2rem;">Nenhum caso encontrado.</p>`;
                 return;
             }
 
-            let rows = [];
-            for (const doc of snapshot.docs) {
+            let rows = snapshot.docs.map(doc => {
                 const r = { id: doc.id, ...doc.data() };
-                let clienteNome = 'N/A';
-                if (r.cliente_id) {
-                    const clienteDoc = await db.collection('clientes').doc(r.cliente_id).get();
-                    if (clienteDoc.exists) {
-                        clienteNome = clienteDoc.data().nome;
-                    }
-                }
-                r.clienteNome = clienteNome;
-
-                if (!busca ||
+                r.clienteNome = clientesMap.get(r.cliente_id) || 'N/A';
+                return r;
+            }).filter(r => {
+                return !busca ||
                     r.numero.toLowerCase().includes(busca) ||
                     (r.partes && r.partes.toLowerCase().includes(busca)) ||
-                    clienteNome.toLowerCase().includes(busca)) {
-                    rows.push(r);
-                }
-            }
+                    r.clienteNome.toLowerCase().includes(busca);
+            });
+
+            const totalRows = rows.length;
+            const rowsPerPage = 20;
+            const totalPages = Math.ceil(totalRows / rowsPerPage);
+            const start = (page - 1) * rowsPerPage;
+            const end = start + rowsPerPage;
+            const paginatedRows = rows.slice(start, end);
 
             table.innerHTML = `<table><thead><tr><th>Nº Processo</th><th>Cliente</th><th>Partes</th><th>Advogado Responsável</th><th>Data de Abertura</th><th>Status</th><th>Ações</th></tr></thead><tbody>
-            ${rows.map(r => `<tr>
+            ${paginatedRows.map(r => `<tr>
                 <td data-label="Nº Processo">${r.numero}</td>
                 <td data-label="Cliente">${r.clienteNome}</td>
                 <td data-label="Partes">${r.partes || ''}</td>
@@ -1701,44 +1745,81 @@
                 <td data-label="Status"><span class="badge ${r.status}">${r.status}</span></td>
                 <td data-label="Ações"><div class="actions">
                     <button onclick="abrirModalCaso('${r.id}')" title="Editar"><i class="fa fa-edit"></i></button>
-                    <button onclick="delRow('casos', '${r.id}', renderCasos)" title="Excluir"><i class="fa fa-trash"></i></button>
+                    <button onclick="delRow('casos', '${r.id}', () => renderCasos(${page}))" title="Excluir"><i class="fa fa-trash"></i></button>
                 </div></td>
             </tr>`).join('')}</tbody></table>`;
+
+            if (totalPages > 1) {
+                let paginationHTML = '';
+                if (page > 1) {
+                    paginationHTML += `<button onclick="renderCasos(${page - 1})">&laquo; Anterior</button>`;
+                }
+                for (let i = 1; i <= totalPages; i++) {
+                    paginationHTML += `<button onclick="renderCasos(${i})" class="${i === page ? 'active' : ''}">${i}</button>`;
+                }
+                if (page < totalPages) {
+                    paginationHTML += `<button onclick="renderCasos(${page + 1})">Próximo &raquo;</button>`;
+                }
+                paginacaoContainer.innerHTML = paginationHTML;
+            }
         }
 
-        async function renderClientes() {
+        async function renderClientes(page = 1) {
             $('#tabela-clientes').innerHTML = SPINNER_HTML;
             const busca = $('#buscar-cliente').value.toLowerCase();
-            let query = db.collection('clientes');
+            const query = db.collection('clientes');
 
             const snapshot = await query.orderBy('nome').get();
-
             const table = $('#tabela-clientes');
+            const paginacaoContainer = $('#paginacao-clientes');
+            paginacaoContainer.innerHTML = '';
+
             if (snapshot.empty) {
                 table.innerHTML = `<p style="text-align:center; padding: 2rem;">Nenhum cliente encontrado.</p>`;
                 return;
             }
 
-            const rows = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }))
+            let rows = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }))
                 .filter(r => !busca ||
                     r.nome.toLowerCase().includes(busca) ||
                     (r.email && r.email.toLowerCase().includes(busca)) ||
                     (r.fone && r.fone.toLowerCase().includes(busca)));
 
+            const totalRows = rows.length;
+            const rowsPerPage = 20;
+            const totalPages = Math.ceil(totalRows / rowsPerPage);
+            const start = (page - 1) * rowsPerPage;
+            const end = start + rowsPerPage;
+            const paginatedRows = rows.slice(start, end);
+
             table.innerHTML = `<table><thead><tr><th>Nome</th><th>E-mail</th><th>Telefone</th><th>Anotações / Preferências</th><th>Ações</th></tr></thead><tbody>
-            ${rows.map(r => `<tr>
+            ${paginatedRows.map(r => `<tr>
                 <td data-label="Nome">${r.nome}</td>
                 <td data-label="E-mail">${r.email || ''}</td>
                 <td data-label="Telefone">${r.fone || ''}</td>
                 <td data-label="Anotações / Preferências">${r.notas || ''}</td>
                 <td data-label="Ações"><div class="actions">
                     <button onclick="abrirModalCliente('${r.id}')" title="Editar"><i class="fa fa-edit"></i></button>
-                    <button onclick="delRow('clientes', '${r.id}', renderClientes)" title="Excluir"><i class="fa fa-trash"></i></button>
+                    <button onclick="delRow('clientes', '${r.id}', () => renderClientes(${page}))" title="Excluir"><i class="fa fa-trash"></i></button>
                 </div></td>
             </tr>`).join('')}</tbody></table>`;
+
+            if (totalPages > 1) {
+                let paginationHTML = '';
+                if (page > 1) {
+                    paginationHTML += `<button onclick="renderClientes(${page - 1})">&laquo; Anterior</button>`;
+                }
+                for (let i = 1; i <= totalPages; i++) {
+                    paginationHTML += `<button onclick="renderClientes(${i})" class="${i === page ? 'active' : ''}">${i}</button>`;
+                }
+                if (page < totalPages) {
+                    paginationHTML += `<button onclick="renderClientes(${page + 1})">Próximo &raquo;</button>`;
+                }
+                paginacaoContainer.innerHTML = paginationHTML;
+            }
         }
 
-        async function renderDocumentos() {
+        async function renderDocumentos(page = 1) {
             $('#tabela-documentos').innerHTML = SPINNER_HTML;
             const clienteId = $('#doc-filtro-cliente').value;
             const casoId = $('#doc-filtro-caso').value;
@@ -1746,39 +1827,41 @@
             if (clienteId) query = query.where('cliente_id', '==', clienteId);
             if (casoId) query = query.where('caso_id', '==', casoId);
 
-            const snapshot = await query.orderBy('data', 'desc').get();
+            // Otimização: Carregar mapas de clientes e casos uma vez
+            const [clientesSnapshot, casosSnapshot, docsSnapshot] = await Promise.all([
+                db.collection('clientes').get(),
+                db.collection('casos').get(),
+                query.orderBy('data', 'desc').get()
+            ]);
+
+            const clientesMap = new Map(clientesSnapshot.docs.map(doc => [doc.id, doc.data().nome]));
+            const casosMap = new Map(casosSnapshot.docs.map(doc => [doc.id, doc.data().numero]));
 
             const table = $('#tabela-documentos');
-            if (snapshot.empty) {
+            const paginacaoContainer = $('#paginacao-documentos');
+            paginacaoContainer.innerHTML = '';
+
+            if (docsSnapshot.empty) {
                 table.innerHTML = `<p style="text-align:center; padding: 2rem;">Nenhum documento encontrado.</p>`;
                 return;
             }
 
-            let rows = [];
-            for (const doc of snapshot.docs) {
+            let rows = docsSnapshot.docs.map(doc => {
                 const r = { id: doc.id, ...doc.data() };
-                let clienteNome = 'N/A';
-                if (r.cliente_id) {
-                    const clienteDoc = await db.collection('clientes').doc(r.cliente_id).get();
-                    if (clienteDoc.exists) {
-                        clienteNome = clienteDoc.data().nome;
-                    }
-                }
-                r.clienteNome = clienteNome;
+                r.clienteNome = clientesMap.get(r.cliente_id) || 'N/A';
+                r.casoNumero = casosMap.get(r.caso_id) || 'N/A';
+                return r;
+            });
 
-                let casoNumero = 'N/A';
-                if (r.caso_id) {
-                    const casoDoc = await db.collection('casos').doc(r.caso_id).get();
-                    if (casoDoc.exists) {
-                        casoNumero = casoDoc.data().numero;
-                    }
-                }
-                r.casoNumero = casoNumero;
-                rows.push(r);
-            }
+            const totalRows = rows.length;
+            const rowsPerPage = 20; // Defina quantos itens por página
+            const totalPages = Math.ceil(totalRows / rowsPerPage);
+            const start = (page - 1) * rowsPerPage;
+            const end = start + rowsPerPage;
+            const paginatedRows = rows.slice(start, end);
 
             table.innerHTML = `<table><thead><tr><th>Título</th><th>Cliente</th><th>Caso</th><th>Data</th><th>Arquivo</th><th>Ações</th></tr></thead><tbody>
-            ${rows.map(r => `<tr>
+            ${paginatedRows.map(r => `<tr>
                 <td data-label="Título">${r.titulo}</td>
                 <td data-label="Cliente">${r.clienteNome}</td>
                 <td data-label="Caso">${r.casoNumero}</td>
@@ -1786,56 +1869,68 @@
                 <td data-label="Arquivo">${r.nome_arquivo}</td>
                 <td data-label="Ações"><div class="actions">
                     <button onclick="downloadDoc('${r.id}')" title="Baixar"><i class="fa fa-download"></i></button>
-                    <button onclick="delRow('docs', '${r.id}', renderDocumentos)" title="Excluir"><i class="fa fa-trash"></i></button>
+                    <button onclick="delRow('docs', '${r.id}', () => renderDocumentos(${page}))" title="Excluir"><i class="fa fa-trash"></i></button>
                 </div></td>
             </tr>`).join('')}</tbody></table>`;
+
+            if (totalPages > 1) {
+                let paginationHTML = '';
+                if (page > 1) {
+                    paginationHTML += `<button onclick="renderDocumentos(${page - 1})">&laquo; Anterior</button>`;
+                }
+                for (let i = 1; i <= totalPages; i++) {
+                    paginationHTML += `<button onclick="renderDocumentos(${i})" class="${i === page ? 'active' : ''}">${i}</button>`;
+                }
+                if (page < totalPages) {
+                    paginationHTML += `<button onclick="renderDocumentos(${page + 1})">Próximo &raquo;</button>`;
+                }
+                paginacaoContainer.innerHTML = paginationHTML;
+            }
         }
 
-        async function renderAgenda() {
+        async function renderAgenda(page = 1) {
             $('#tabela-agenda').innerHTML = SPINNER_HTML;
             const dataFiltro = $('#agenda-filtro-data').value;
             const tipoFiltro = $('#agenda-filtro-tipo').value;
             let query = db.collection('agenda');
             if (tipoFiltro) query = query.where('tipo_evento', '==', tipoFiltro);
 
-            const snapshot = await query.orderBy('datahora', 'desc').get();
+            const [clientesSnapshot, casosSnapshot, agendaSnapshot] = await Promise.all([
+                db.collection('clientes').get(),
+                db.collection('casos').get(),
+                query.orderBy('datahora', 'desc').get()
+            ]);
+
+            const clientesMap = new Map(clientesSnapshot.docs.map(doc => [doc.id, doc.data().nome]));
+            const casosMap = new Map(casosSnapshot.docs.map(doc => [doc.id, doc.data().numero]));
 
             const table = $('#tabela-agenda');
-            if (snapshot.empty) {
+            const paginacaoContainer = $('#paginacao-agenda');
+            paginacaoContainer.innerHTML = '';
+
+            if (agendaSnapshot.empty) {
                 table.innerHTML = `<p style="text-align:center; padding: 2rem;">Nenhum evento encontrado.</p>`;
                 return;
             }
 
-            let rows = [];
-            for (const doc of snapshot.docs) {
+            let rows = agendaSnapshot.docs.map(doc => {
                 const r = { id: doc.id, ...doc.data() };
+                r.clienteNome = clientesMap.get(r.cliente_id) || '';
+                r.casoNumero = casosMap.get(r.caso_id) || '';
+                return r;
+            }).filter(r => {
+                return !dataFiltro || (r.datahora && r.datahora.substring(0, 10) === dataFiltro);
+            });
 
-                if (dataFiltro && r.datahora.substring(0, 10) !== dataFiltro) {
-                    continue;
-                }
-
-                let clienteNome = '';
-                if (r.cliente_id) {
-                    const clienteDoc = await db.collection('clientes').doc(r.cliente_id).get();
-                    if (clienteDoc.exists) {
-                        clienteNome = clienteDoc.data().nome;
-                    }
-                }
-                r.clienteNome = clienteNome;
-
-                let casoNumero = '';
-                if (r.caso_id) {
-                    const casoDoc = await db.collection('casos').doc(r.caso_id).get();
-                    if (casoDoc.exists) {
-                        casoNumero = casoDoc.data().numero;
-                    }
-                }
-                r.casoNumero = casoNumero;
-                rows.push(r);
-            }
+            const totalRows = rows.length;
+            const rowsPerPage = 20; // Itens por página
+            const totalPages = Math.ceil(totalRows / rowsPerPage);
+            const start = (page - 1) * rowsPerPage;
+            const end = start + rowsPerPage;
+            const paginatedRows = rows.slice(start, end);
 
             table.innerHTML = `<table><thead><tr><th>Evento/Prazo</th><th>Tipo</th><th>Cliente/Caso</th><th>Data/Hora</th><th>Local / Link</th><th>Descrição</th><th>Status</th><th>Ações</th></tr></thead><tbody>
-            ${rows.map(r => `<tr>
+            ${paginatedRows.map(r => `<tr>
                 <td data-label="Evento">${r.titulo}</td>
                 <td data-label="Tipo">${r.tipo_evento}</td>
                 <td data-label="Cliente/Caso">${r.clienteNome}${r.casoNumero ? ` / ${r.casoNumero}` : ''}</td>
@@ -1845,12 +1940,107 @@
                 <td data-label="Status"><span class="badge ${r.status}">${r.status}</span></td>
                 <td data-label="Ações"><div class="actions">
                     <button onclick="abrirModalEvento('${r.id}')" title="Editar"><i class="fa fa-edit"></i></button>
-                    <button onclick="delRow('agenda', '${r.id}', renderAgenda)" title="Excluir"><i class="fa fa-trash"></i></button>
+                    <button onclick="delRow('agenda', '${r.id}', () => renderAgenda(${page}))" title="Excluir"><i class="fa fa-trash"></i></button>
                 </div></td>
             </tr>`).join('')}</tbody></table>`;
+
+            if (totalPages > 1) {
+                let paginationHTML = '';
+                if (page > 1) {
+                    paginationHTML += `<button onclick="renderAgenda(${page - 1})">&laquo; Anterior</button>`;
+                }
+                for (let i = 1; i <= totalPages; i++) {
+                    paginationHTML += `<button onclick="renderAgenda(${i})" class="${i === page ? 'active' : ''}">${i}</button>`;
+                }
+                if (page < totalPages) {
+                    paginationHTML += `<button onclick="renderAgenda(${page + 1})">Próximo &raquo;</button>`;
+                }
+                paginacaoContainer.innerHTML = paginationHTML;
+            }
         }
 
-        async function renderTarefas() {
+        async function renderCasosPorCliente(page = 1) {
+            $('#casos-por-cliente-container').innerHTML = SPINNER_HTML;
+            const busca = $('#buscar-casos-por-cliente').value.toLowerCase();
+
+            const [clientesSnapshot, casosSnapshot] = await Promise.all([
+                db.collection('clientes').orderBy('nome').get(),
+                db.collection('casos').get()
+            ]);
+
+            const casosPorCliente = new Map();
+            casosSnapshot.forEach(doc => {
+                const caso = { id: doc.id, ...doc.data() };
+                if (!casosPorCliente.has(caso.cliente_id)) {
+                    casosPorCliente.set(caso.cliente_id, []);
+                }
+                casosPorCliente.get(caso.cliente_id).push(caso);
+            });
+
+            let clientes = clientesSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }))
+                .filter(c => !busca || c.nome.toLowerCase().includes(busca));
+
+            const container = $('#casos-por-cliente-container');
+            const paginacaoContainer = $('#paginacao-casos-por-cliente');
+            paginacaoContainer.innerHTML = '';
+            container.innerHTML = '';
+
+            if (clientes.length === 0) {
+                container.innerHTML = `<p style="text-align:center; padding: 2rem;">Nenhum cliente encontrado.</p>`;
+                return;
+            }
+
+            const totalRows = clientes.length;
+            const rowsPerPage = 5; // Clientes por página
+            const totalPages = Math.ceil(totalRows / rowsPerPage);
+            const start = (page - 1) * rowsPerPage;
+            const end = start + rowsPerPage;
+            const paginatedClientes = clientes.slice(start, end);
+
+            paginatedClientes.forEach(cliente => {
+                const casos = casosPorCliente.get(cliente.id) || [];
+                const card = document.createElement('div');
+                card.className = 'cliente-card';
+                card.innerHTML = `<h3>${cliente.nome}</h3>`;
+                if (casos.length > 0) {
+                    card.innerHTML += `
+                        <div class="table-wrapper">
+                            <table>
+                                <thead><tr><th>Nº Processo</th><th>Partes</th><th>Status</th></tr></thead>
+                                <tbody>
+                                    ${casos.map(c => `
+                                        <tr>
+                                            <td data-label="Nº Processo">${c.numero}</td>
+                                            <td data-label="Partes">${c.partes || ''}</td>
+                                            <td data-label="Status"><span class="badge ${c.status}">${c.status}</span></td>
+                                        </tr>
+                                    `).join('')}
+                                </tbody>
+                            </table>
+                        </div>
+                    `;
+                } else {
+                    card.innerHTML += `<p>Nenhum caso vinculado a este cliente.</p>`;
+                }
+                container.appendChild(card);
+            });
+
+            if (totalPages > 1) {
+                let paginationHTML = '';
+                if (page > 1) {
+                    paginationHTML += `<button onclick="renderCasosPorCliente(${page - 1})">&laquo; Anterior</button>`;
+                }
+                for (let i = 1; i <= totalPages; i++) {
+                    paginationHTML += `<button onclick="renderCasosPorCliente(${i})" class="${i === page ? 'active' : ''}">${i}</button>`;
+                }
+                if (page < totalPages) {
+                    paginationHTML += `<button onclick="renderCasosPorCliente(${page + 1})">Próximo &raquo;</button>`;
+                }
+                paginacaoContainer.innerHTML = paginationHTML;
+            }
+        }
+
+        async function renderTarefas(page = 1) {
             $('#tabela-tarefas').innerHTML = SPINNER_HTML;
             const status = $('#filtro-tarefa-status').value;
             const prioridade = $('#filtro-tarefa-prioridade').value;
@@ -1858,39 +2048,40 @@
             if (status) query = query.where('status', '==', status);
             if (prioridade) query = query.where('prioridade', '==', prioridade);
 
-            const snapshot = await query.orderBy('prazo_data', 'desc').get();
+            const [clientesSnapshot, casosSnapshot, tarefasSnapshot] = await Promise.all([
+                db.collection('clientes').get(),
+                db.collection('casos').get(),
+                query.orderBy('prazo_data', 'desc').get()
+            ]);
+
+            const clientesMap = new Map(clientesSnapshot.docs.map(doc => [doc.id, doc.data().nome]));
+            const casosMap = new Map(casosSnapshot.docs.map(doc => [doc.id, doc.data().numero]));
 
             const table = $('#tabela-tarefas');
-            if (snapshot.empty) {
+            const paginacaoContainer = $('#paginacao-tarefas');
+            paginacaoContainer.innerHTML = '';
+
+            if (tarefasSnapshot.empty) {
                 table.innerHTML = `<p style="text-align:center; padding: 2rem;">Nenhuma tarefa encontrada.</p>`;
                 return;
             }
 
-            let rows = [];
-            for (const doc of snapshot.docs) {
+            let rows = tarefasSnapshot.docs.map(doc => {
                 const r = { id: doc.id, ...doc.data() };
-                let clienteNome = '';
-                if (r.cliente_id) {
-                    const clienteDoc = await db.collection('clientes').doc(r.cliente_id).get();
-                    if (clienteDoc.exists) {
-                        clienteNome = clienteDoc.data().nome;
-                    }
-                }
-                r.clienteNome = clienteNome;
+                r.clienteNome = clientesMap.get(r.cliente_id) || '';
+                r.casoNumero = casosMap.get(r.caso_id) || '';
+                return r;
+            });
 
-                let casoNumero = '';
-                if (r.caso_id) {
-                    const casoDoc = await db.collection('casos').doc(r.caso_id).get();
-                    if (casoDoc.exists) {
-                        casoNumero = casoDoc.data().numero;
-                    }
-                }
-                r.casoNumero = casoNumero;
-                rows.push(r);
-            }
+            const totalRows = rows.length;
+            const rowsPerPage = 20; // Itens por página
+            const totalPages = Math.ceil(totalRows / rowsPerPage);
+            const start = (page - 1) * rowsPerPage;
+            const end = start + rowsPerPage;
+            const paginatedRows = rows.slice(start, end);
 
             table.innerHTML = `<table><thead><tr><th></th><th>Descrição</th><th>Cliente/Caso</th><th>Prazo</th><th>Prioridade</th><th>Ações</th></tr></thead><tbody>
-            ${rows.map(r => `<tr>
+            ${paginatedRows.map(r => `<tr>
                 <td data-label="Status"><input type="checkbox" onchange="concluirTarefa('${r.id}', this.checked)" ${r.status === 'Concluída' ? 'checked' : ''}></td>
                 <td data-label="Descrição" style="${r.status === 'Concluída' ? 'text-decoration:line-through; color:var(--muted-text)' : ''}">${r.descricao}</td>
                 <td data-label="Cliente/Caso">${r.clienteNome}${r.casoNumero ? ` / ${r.casoNumero}` : ''}</td>
@@ -1898,9 +2089,23 @@
                 <td data-label="Prioridade"><span class="badge ${r.prioridade}">${r.prioridade}</span></td>
                 <td data-label="Ações"><div class="actions">
                     <button onclick="abrirModalTarefa('${r.id}')" title="Editar"><i class="fa fa-edit"></i></button>
-                    <button onclick="delRow('tarefas', '${r.id}', renderTarefas)" title="Excluir"><i class="fa fa-trash"></i></button>
+                    <button onclick="delRow('tarefas', '${r.id}', () => renderTarefas(${page}))" title="Excluir"><i class="fa fa-trash"></i></button>
                 </div></td>
             </tr>`).join('')}</tbody></table>`;
+
+            if (totalPages > 1) {
+                let paginationHTML = '';
+                if (page > 1) {
+                    paginationHTML += `<button onclick="renderTarefas(${page - 1})">&laquo; Anterior</button>`;
+                }
+                for (let i = 1; i <= totalPages; i++) {
+                    paginationHTML += `<button onclick="renderTarefas(${i})" class="${i === page ? 'active' : ''}">${i}</button>`;
+                }
+                if (page < totalPages) {
+                    paginationHTML += `<button onclick="renderTarefas(${page + 1})">Próximo &raquo;</button>`;
+                }
+                paginacaoContainer.innerHTML = paginationHTML;
+            }
         }
 
         async function loadFinanceiro() {
@@ -1975,46 +2180,100 @@
             </tr>`).join('')}</tbody></table>`;
         }
 
-        async function renderCasosPorCliente() {
-            const container = $('#casos-por-cliente-container');
-            container.innerHTML = SPINNER_HTML;
+        async function renderCasosPorCliente(page = 1) {
+            $('#casos-por-cliente-container').innerHTML = SPINNER_HTML;
             const busca = $('#buscar-casos-por-cliente').value.toLowerCase();
-            let query = db.collection('clientes');
-            if (busca) {
-                query = query.where('nome', '>=', busca).where('nome', '<=', busca + '');
-            }
-            const clientesSnapshot = await query.orderBy('nome').get();
+
+            // 1. Fetch all clients and cases
+            const [clientesSnapshot, casosSnapshot] = await Promise.all([
+                db.collection('clientes').orderBy('nome').get(),
+                db.collection('casos').get()
+            ]);
+
+            const container = $('#casos-por-cliente-container');
+            const paginacaoContainer = $('#paginacao-casos-por-cliente');
+            paginacaoContainer.innerHTML = '';
 
             if (clientesSnapshot.empty) {
-                container.innerHTML = `<p style="text-align:center; padding: 2rem;">Nenhum cliente encontrado.</p>`;
+                container.innerHTML = '<p style="text-align:center; padding: 2rem;">Nenhum cliente encontrado.</p>';
                 return;
             }
 
-            container.innerHTML = '';
-            for (const clienteDoc of clientesSnapshot.docs) {
-                const cliente = { id: clienteDoc.id, ...clienteDoc.data() };
+            const casos = casosSnapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+
+            // 2. Filter clients based on search and if they have cases
+            const clientesFiltrados = clientesSnapshot.docs
+                .map(doc => ({ id: doc.id, ...doc.data() }))
+                .filter(cliente => {
+                    const correspondeBusca = !busca || cliente.nome.toLowerCase().includes(busca);
+                    const temCasos = casos.some(c => c.cliente_id === cliente.id);
+                    return correspondeBusca && temCasos;
+                });
+
+            if (clientesFiltrados.length === 0) {
+                container.innerHTML = '<p style="text-align:center; padding: 2rem;">Nenhum cliente com casos encontrado para a busca.</p>';
+                return;
+            }
+
+            // 3. Paginate the results
+            const rowsPerPage = 20;
+            const totalRows = clientesFiltrados.length;
+            const totalPages = Math.ceil(totalRows / rowsPerPage);
+            const start = (page - 1) * rowsPerPage;
+            const end = start + rowsPerPage;
+            const paginatedClients = clientesFiltrados.slice(start, end);
+
+            container.innerHTML = ''; // Clear for new content
+
+            // 4. Render the cards for the current page
+            paginatedClients.forEach(cliente => {
+                const casosDoCliente = casos.filter(c => c.cliente_id === cliente.id);
+
                 const card = document.createElement('div');
                 card.className = 'cliente-card';
-
-                const casosSnapshot = await db.collection('casos').where('cliente_id', '==', cliente.id).get();
-                let casosHtml = '<p>Nenhum caso registrado para este cliente.</p>';
-                if (!casosSnapshot.empty) {
-                    casosHtml = `<div class="table-wrapper"><table>
-                        <thead><tr><th>Nº do Processo</th><th>Status</th></tr></thead>
-                        <tbody>
-                            ${casosSnapshot.docs.map(casoDoc => {
-                        const caso = casoDoc.data();
-                        return `
+                card.innerHTML = `
+                    <h3>${cliente.nome}</h3>
+                    <div class="table-wrapper">
+                        <table>
+                            <thead>
                                 <tr>
-                                    <td data-label="Nº do Processo">${caso.numero}</td>
-                                    <td data-label="Status"><span class="badge ${caso.status}">${caso.status}</span></td>
-                                </tr>`
-                    }).join('')}
-                        </tbody>
-                    </table></div>`;
-                }
-                card.innerHTML = `<h3>${cliente.nome}</h3>${casosHtml}`;
+                                    <th>Nº do Processo</th>
+                                    <th>Status</th>
+                                    <th>Ações</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                ${casosDoCliente.map(caso => `
+                                    <tr>
+                                        <td data-label="Nº do Processo">${caso.numero}</td>
+                                        <td data-label="Status"><span class="badge ${caso.status}">${caso.status}</span></td>
+                                        <td data-label="Ações">
+                                            <div class="actions">
+                                                <button onclick="abrirModalCaso('${caso.id}')" title="Editar"><i class="fa fa-edit"></i></button>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                `).join('')}
+                            </tbody>
+                        </table>
+                    </div>
+                `;
                 container.appendChild(card);
+            });
+
+            // 5. Render pagination controls
+            if (totalPages > 1) {
+                let paginationHTML = '';
+                if (page > 1) {
+                    paginationHTML += `<button onclick="renderCasosPorCliente(${page - 1})">&laquo; Anterior</button>`;
+                }
+                for (let i = 1; i <= totalPages; i++) {
+                    paginationHTML += `<button onclick="renderCasosPorCliente(${i})" class="${i === page ? 'active' : ''}">${i}</button>`;
+                }
+                if (page < totalPages) {
+                    paginationHTML += `<button onclick="renderCasosPorCliente(${page + 1})">Próximo &raquo;</button>`;
+                }
+                paginacaoContainer.innerHTML = paginationHTML;
             }
         }
 
