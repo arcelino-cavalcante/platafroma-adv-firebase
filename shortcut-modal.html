@@ -1,0 +1,21 @@
+<div class="modal-bg" id="modal-atalho">
+    <div class="modal">
+        <div class="modal-header">
+            <h3>Criar Atalho</h3>
+            <button class="close-modal" onclick="fecharModal('modal-atalho')">&times;</button>
+        </div>
+        <form onsubmit="salvarAtalho(event)">
+            <div class="form-group">
+                <label for="atalho-nome">Nome do Atalho</label>
+                <input id="atalho-nome" type="text" required>
+            </div>
+            <div class="form-group">
+                <label for="atalho-link">Link do Atalho</label>
+                <input id="atalho-link" type="url" required>
+            </div>
+            <div class="modal-footer">
+                <button type="submit" class="btn btn-success">Salvar</button>
+            </div>
+        </form>
+    </div>
+</div>

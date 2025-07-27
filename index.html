@@ -7,7 +7,7 @@
     <title>Painel Jurídico Completa</title>
     <link rel="icon" href="https://cdn-icons-png.flaticon.com/512/727/727399.png">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.11/main.min.css" rel="stylesheet">
     <style>
         :root {
@@ -1192,9 +1192,11 @@
                 </div>
                 <div class="filter-bar">
                     <input id="doc-filtro-cliente-busca" type="text" placeholder="Buscar por nome do cliente..." onkeyup="renderDocumentos(1)">
+                    <button class="btn" onclick="abrirModalAtalho()"><i class="fa fa-link"></i> Criar Atalho</button>
                     <button class="btn btn-success" onclick="abrirModalDocumento()"><i class="fa fa-upload"></i> Anexar
                         Documento</button>
                 </div>
+                <div id="atalhos-container" class="atalhos-bar" style="margin-bottom: 1.5rem; display: flex; flex-wrap: wrap; gap: 0.5rem;"></div>
                 <div class="table-wrapper" id="tabela-documentos"></div>
                 <div id="paginacao-documentos" class="pagination-container"></div>
             </div>
@@ -1386,8 +1388,8 @@
                         id="doc-caso"></select></div>
                 <div class="form-group"><label for="doc-titulo">Título / Descrição *</label><input id="doc-titulo"
                         type="text" required></div>
-                <div class="form-group"><label for="doc-file">Arquivo *</label><input id="doc-file" type="file"
-                        accept=".pdf,.doc,.docx,.jpg,.png,.jpeg,.xls,.xlsx" required></div>
+                <div class="form-group"><label for="doc-link">Link do Documento (Google Drive) *</label><input id="doc-link" type="url"
+                        placeholder="Cole o link compartilhável do Google Drive aqui" required></div>
                 <div class="modal-footer"><button type="submit" class="btn btn-success"><i class="fa fa-save"></i>
                         Salvar</button></div>
             </form>
@@ -1498,11 +1500,32 @@
             </form>
         </div>
     </div>
+<div class="modal-bg" id="modal-atalho">
+    <div class="modal">
+        <div class="modal-header">
+            <h3>Criar Atalho</h3>
+            <button class="close-modal" onclick="fecharModal('modal-atalho')">&times;</button>
+        </div>
+        <form onsubmit="salvarAtalho(event)">
+            <div class="form-group">
+                <label for="atalho-nome">Nome do Atalho</label>
+                <input id="atalho-nome" type="text" required>
+            </div>
+            <div class="form-group">
+                <label for="atalho-link">Link do Atalho</label>
+                <input id="atalho-link" type="url" required>
+            </div>
+            <div class="modal-footer">
+                <button type="submit" class="btn btn-success">Salvar</button>
+            </div>
+        </form>
+    </div>
+</div>
 
     <!-- Firebase -->
     <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
     <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-firestore.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-storage.js"></script>
+    
 
     <!-- Configuração do Firebase -->
     <script src="firebase-config.js"></script>
@@ -1816,7 +1839,51 @@
 
         
 
-                async function renderDocumentos(page = 1) {
+                function abrirModalAtalho() {
+            $('#modal-atalho').classList.add('active');
+        }
+
+        async function salvarAtalho(e) {
+            e.preventDefault();
+            const nome = $('#atalho-nome').value;
+            const link = $('#atalho-link').value;
+
+            if (!nome || !link) {
+                showNotif('danger', 'Por favor, preencha todos os campos.');
+                return;
+            }
+
+            showSpinner('Salvando...');
+            try {
+                await db.collection('atalhos').add({ nome, link });
+                showNotif('success', 'Atalho salvo com sucesso!');
+                fecharModal('modal-atalho');
+                renderAtalhos();
+            } catch (err) {
+                console.error(err);
+                showNotif('danger', 'Erro ao salvar o atalho.');
+            } finally {
+                hideSpinner();
+            }
+        }
+
+        async function renderAtalhos() {
+            const atalhosContainer = $('#atalhos-container');
+            atalhosContainer.innerHTML = '';
+            const snapshot = await db.collection('atalhos').get();
+            if (!snapshot.empty) {
+                let html = '<div class="atalhos-bar"><h3>Atalhos Rápidos:</h3>';
+                snapshot.forEach(doc => {
+                    const atalho = doc.data();
+                    html += `<a href="${atalho.link}" target="_blank" class="btn">${atalho.nome}</a>`;
+                });
+                html += '</div>';
+                atalhosContainer.innerHTML = html;
+            }
+        }
+
+        async function renderDocumentos(page = 1) {
+            await renderAtalhos(); // Renderiza os atalhos antes de renderizar os documentos
             $('#tabela-documentos').innerHTML = SPINNER_HTML;
             const buscaCliente = $('#doc-filtro-cliente-busca').value.toLowerCase();
 
@@ -1869,7 +1936,7 @@
                 <td data-label="Data">${fmtDate(r.data)}</td>
                 <td data-label="Arquivo">${r.nome_arquivo}</td>
                 <td data-label="Ações"><div class="actions">
-                    <button onclick="downloadDoc('${r.id}')" title="Baixar"><i class="fa fa-download"></i></button>
+                    <a href="${r.link}" target="_blank" class="btn-info" title="Ver Documento"><i class="fa-regular fa-eye"></i></a>
                     <button onclick="delRow('docs', '${r.id}', () => renderDocumentos(${page}))" title="Excluir"><i class="fa fa-trash"></i></button>
                 </div></td>
             </tr>`).join('')}</tbody></table>`;
@@ -2442,40 +2509,41 @@
             $('#modal-documento').classList.add('active');
         }
 
-        async function salvarDocumento(event) {
-            event.preventDefault();
-            const file = $('#doc-file').files[0];
+                async function salvarDocumento(e) {
+            e.preventDefault();
+            const id = $('#doc-id').value;
+            const link = $('#doc-link').value;
+            const cliente_id = $('#doc-cliente').value;
+            const caso_id = $('#doc-caso').value;
             const titulo = $('#doc-titulo').value;
-            const clienteId = $('#doc-cliente').value;
-            if (!file || !titulo || !clienteId) {
-                return showNotif('danger', 'Cliente, título e arquivo são obrigatórios.');
+
+            if (!cliente_id || !titulo || !link) {
+                showNotif('danger', 'Por favor, preencha todos os campos obrigatórios.');
+                return;
             }
-            showSpinner('Salvando documento...');
 
-            const sanitizedFileName = file.name.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-zA-Z0-9._-]/g, '_').replace(/__+/g, '_');
-            const filePath = `documentos/${Date.now()}-${sanitizedFileName}`;
-            const storageRef = storage.ref(filePath);
-
+            showSpinner('Salvando...');
             try {
-                await storageRef.put(file);
-                const downloadURL = await storageRef.getDownloadURL();
-
-                const record = {
-                    cliente_id: clienteId,
-                    caso_id: $('#doc-caso').value || null,
-                    titulo: titulo,
-                    nome_arquivo: file.name,
-                    path_arquivo: filePath,
-                    download_url: downloadURL,
-                    tipo_arquivo: file.type,
-                    data: new Date().toISOString().split('T')[0]
+                const docData = {
+                    cliente_id,
+                    caso_id,
+                    titulo,
+                    link,
+                    data: new Date().toISOString()
                 };
-                await db.collection('docs').add(record);
-                showNotif('success', 'Documento salvo!');
+
+                if (id) {
+                    await db.collection('docs').doc(id).update(docData);
+                    showNotif('success', 'Documento atualizado com sucesso!');
+                } else {
+                    await db.collection('docs').add(docData);
+                    showNotif('success', 'Documento salvo com sucesso!');
+                }
                 fecharModal('modal-documento');
                 renderDocumentos();
-            } catch (error) {
-                showNotif('danger', 'Erro ao salvar documento: ' + error.message);
+            } catch (err) {
+                console.error(err);
+                showNotif('danger', 'Erro ao salvar o documento.');
             } finally {
                 hideSpinner();
             }
