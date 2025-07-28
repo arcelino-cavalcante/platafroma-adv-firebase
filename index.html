@@ -1193,6 +1193,7 @@
                 <div class="filter-bar">
                     <input id="doc-filtro-cliente-busca" type="text" placeholder="Buscar por nome do cliente..." onkeyup="renderDocumentos(1)">
                     <button class="btn" onclick="abrirModalAtalho()"><i class="fa fa-link"></i> Criar Atalho</button>
+                    <button class="btn" onclick="abrirModalGerenciarAtalhos()"><i class="fa fa-edit"></i> Editar/Deletar Atalhos</button>
                     <button class="btn btn-success" onclick="abrirModalDocumento()"><i class="fa fa-upload"></i> Anexar
                         Documento</button>
                 </div>
@@ -1499,7 +1500,7 @@
                         Salvar</button></div>
             </form>
         </div>
-    </div>
+</div>
 <div class="modal-bg" id="modal-atalho">
     <div class="modal">
         <div class="modal-header">
@@ -1519,6 +1520,15 @@
                 <button type="submit" class="btn btn-success">Salvar</button>
             </div>
         </form>
+    </div>
+</div>
+<div class="modal-bg" id="modal-gerenciar-atalhos">
+    <div class="modal">
+        <div class="modal-header">
+            <h3>Gerenciar Atalhos</h3>
+            <button class="close-modal" onclick="fecharModal('modal-gerenciar-atalhos')">&times;</button>
+        </div>
+        <div id="atalhos-edicao-container"></div>
     </div>
 </div>
 
@@ -1840,6 +1850,8 @@
         
 
                 function abrirModalAtalho() {
+            $('#atalho-nome').value = '';
+            $('#atalho-link').value = '';
             $('#modal-atalho').classList.add('active');
         }
 
@@ -1872,14 +1884,71 @@
             atalhosContainer.innerHTML = '';
             const snapshot = await db.collection('atalhos').get();
             if (!snapshot.empty) {
-                let html = '<div class="atalhos-bar"><h3>Atalhos Rápidos:</h3>';
+                let html = '<h3>Atalhos Rápidos:</h3>';
                 snapshot.forEach(doc => {
                     const atalho = doc.data();
                     html += `<a href="${atalho.link}" target="_blank" class="btn">${atalho.nome}</a>`;
                 });
-                html += '</div>';
                 atalhosContainer.innerHTML = html;
             }
+        }
+
+        function abrirModalGerenciarAtalhos() {
+            listarAtalhosEdicao();
+            $('#modal-gerenciar-atalhos').classList.add('active');
+        }
+
+        async function listarAtalhosEdicao() {
+            const container = $('#atalhos-edicao-container');
+            container.innerHTML = SPINNER_HTML;
+            try {
+                const snapshot = await db.collection('atalhos').get();
+                if (snapshot.empty) {
+                    container.innerHTML = '<p style="text-align:center; padding:1rem;">Nenhum atalho criado.</p>';
+                    return;
+                }
+                let html = '<table><thead><tr><th>Nome</th><th>Link</th><th>Ações</th></tr></thead><tbody>';
+                snapshot.forEach(doc => {
+                    const a = doc.data();
+                    html += `<tr>
+                        <td data-label="Nome"><input id="edit-nome-${doc.id}" type="text" value="${a.nome}" style="width:100%"></td>
+                        <td data-label="Link"><input id="edit-link-${doc.id}" type="url" value="${a.link}" style="width:100%"></td>
+                        <td data-label="Ações"><div class="actions">
+                            <button onclick="salvarEdicaoAtalho('${doc.id}')" title="Salvar"><i class="fa fa-save"></i></button>
+                            <button onclick="deletarAtalho('${doc.id}')" title="Excluir"><i class="fa fa-trash"></i></button>
+                        </div></td>
+                    </tr>`;
+                });
+                html += '</tbody></table>';
+                container.innerHTML = html;
+            } catch (err) {
+                console.error(err);
+                container.innerHTML = '<p style="text-align:center; padding:1rem;">Erro ao carregar atalhos.</p>';
+            }
+        }
+
+        async function salvarEdicaoAtalho(id) {
+            const nome = document.getElementById('edit-nome-' + id).value;
+            const link = document.getElementById('edit-link-' + id).value;
+            if (!nome || !link) {
+                return showNotif('danger', 'Por favor, preencha todos os campos.');
+            }
+            showSpinner('Salvando...');
+            try {
+                await db.collection('atalhos').doc(id).update({ nome, link });
+                showNotif('success', 'Atalho atualizado!');
+                listarAtalhosEdicao();
+                renderAtalhos();
+            } catch (err) {
+                console.error(err);
+                showNotif('danger', 'Erro ao salvar o atalho.');
+            } finally {
+                hideSpinner();
+            }
+        }
+
+        function deletarAtalho(id) {
+            delRow('atalhos', id, () => { listarAtalhosEdicao(); renderAtalhos(); });
         }
 
         async function renderDocumentos(page = 1) {
