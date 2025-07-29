@@ -1629,7 +1629,10 @@
 
         /* ------------- FUNÇÕES DE RENDERIZAÇÃO (COM SPINNERS) ------------- */
 
+        let calendar;
+
         async function loadDashboard() {
+            // Load summary cards data
             $('#total-clientes').innerHTML = SPINNER_HTML;
             $('#casos-ativos').innerHTML = SPINNER_HTML;
             $('#eventos-agendados').innerHTML = SPINNER_HTML;
@@ -1651,84 +1654,107 @@
             });
             $('#total-a-receber').innerText = fmtCurrency(a_receber);
 
+            // --- Optimized FullCalendar Initialization ---
+            if (calendar) {
+                calendar.refetchEvents();
+            } else {
+                const calendarEl = $('#calendar');
+                calendar = new FullCalendar.Calendar(calendarEl, {
+                    initialView: window.innerWidth < 768 ? 'listWeek' : 'dayGridMonth',
+                    locale: 'pt-br',
+                    headerToolbar: {
+                        left: 'prev,next today',
+                        center: 'title',
+                        right: 'dayGridMonth,timeGridWeek,listWeek'
+                    },
+                    eventOrder: 'start,title',
+                    events: async (fetchInfo, successCallback, failureCallback) => {
+                        try {
+                            const startDate = fetchInfo.startStr.split('T')[0];
+                            const endDate = fetchInfo.endStr.split('T')[0];
 
-            // FullCalendar
-            const calendarEl = $('#calendar');
-            const calendar = new FullCalendar.Calendar(calendarEl, {
-                initialView: window.innerWidth < 768 ? 'listWeek' : 'dayGridMonth',
-                locale: 'pt-br',
-                headerToolbar: {
-                    left: 'prev,next today',
-                    center: 'title',
-                    right: 'dayGridMonth,timeGridWeek,timeGridDay,listWeek'
-                },
-                eventOrder: 'start,title', // Ordena eventos por data/hora de início e depois por título
-                events: async (fetchInfo, successCallback, failureCallback) => {
-                    const agendaSnapshot = await db.collection('agenda').get();
-                    const tarefasSnapshot = await db.collection('tarefas').get();
+                            const agendaQuery = db.collection('agenda').where('datahora', '>=', startDate).where('datahora', '<', endDate);
+                            const tarefasQuery = db.collection('tarefas').where('prazo_data', '>=', startDate).where('prazo_data', '<', endDate);
 
-                    const events = [];
-                    agendaSnapshot.forEach(doc => {
-                        const event = doc.data();
-                        events.push({
-                            id: doc.id,
-                            title: event.titulo,
-                            start: event.datahora,
-                            allDay: event.tipo_evento === 'Prazo Processual',
-                            extendedProps: { type: 'agenda' },
-                            classNames: [`status-${event.status.toLowerCase()}`]
-                        });
-                    });
+                            const [agendaSnapshot, tarefasSnapshot] = await Promise.all([agendaQuery.get(), tarefasQuery.get()]);
 
-                    tarefasSnapshot.forEach(doc => {
-                        const tarefa = doc.data();
-                        if (tarefa.prazo_data) {
-                            events.push({
-                                id: doc.id,
-                                title: `Tarefa: ${tarefa.descricao}`,
-                                start: tarefa.prazo_data,
-                                allDay: true,
-                                extendedProps: { type: 'tarefa' },
-                                classNames: [`status-${tarefa.status.toLowerCase()}`]
+                            const events = [];
+                            agendaSnapshot.forEach(doc => {
+                                const event = doc.data();
+                                events.push({
+                                    id: doc.id,
+                                    title: event.titulo,
+                                    start: event.datahora,
+                                    allDay: event.tipo_evento === 'Prazo Processual',
+                                    extendedProps: { type: 'agenda', data: event },
+                                    backgroundColor: event.status === 'Realizado' ? 'var(--success)' : (event.status === 'Cancelado' ? 'var(--danger)' : 'var(--main)'),
+                                    borderColor: event.status === 'Realizado' ? 'var(--success)' : (event.status === 'Cancelado' ? 'var(--danger)' : 'var(--main)'),
+                                });
                             });
-                        }
-                    });
-                    successCallback(events);
-                },
-                eventClick: function (info) {
-                    if (info.event.extendedProps.type === 'agenda') {
-                        abrirModalEvento(info.event.id);
-                    } else if (info.event.extendedProps.type === 'tarefa') {
-                        abrirModalTarefa(info.event.id);
-                    }
-                },
-                eventContent: function (arg) {
-                    let eventDetails = document.createElement('div');
-                    let statusBadge = arg.event.extendedProps.status ? `<span class="badge ${arg.event.extendedProps.status}">${arg.event.extendedProps.status}</span>` : '';
-                    let typeBadge = arg.event.extendedProps.tipo_evento ? `<span class="badge">${arg.event.extendedProps.tipo_evento}</span>` : '';
 
-                    eventDetails.innerHTML = `
-                        <div class="fc-event-main-frame">
-                            <div class="fc-event-title-container">
-                                <div class="fc-event-title">${arg.event.title}</div>
-                            </div>
-                        </div>
-                        <div class="fc-event-details">
-                            ${statusBadge}
-                            ${typeBadge}
-                        </div>
-                    `;
-                    return { domNodes: [eventDetails] };
-                },
-                windowResize: function (view) {
-                    if (window.innerWidth < 768) {
-                        calendar.changeView('listWeek');
-                    } else {
-                        calendar.changeView('dayGridMonth');
+                            tarefasSnapshot.forEach(doc => {
+                                const tarefa = doc.data();
+                                if (tarefa.prazo_data) {
+                                    events.push({
+                                        id: doc.id,
+                                        title: `Tarefa: ${tarefa.descricao}`,
+                                        start: tarefa.prazo_data,
+                                        allDay: true,
+                                        extendedProps: { type: 'tarefa', data: tarefa },
+                                        backgroundColor: tarefa.status === 'Concluída' ? 'var(--success)' : 'var(--accent)',
+                                        borderColor: tarefa.status === 'Concluída' ? 'var(--success)' : 'var(--accent)',
+                                    });
+                                }
+                            });
+                            successCallback(events);
+                        } catch (err) {
+                            console.error("Error fetching calendar events:", err);
+                            showNotif('danger', 'Erro ao carregar eventos do calendário. Pode ser necessário criar um índice no Firestore. Verifique o console para mais detalhes.');
+                            failureCallback(err);
+                        }
+                    },
+                    dateClick: function(info) {
+                        abrirModalEvento(null, info.dateStr);
+                    },
+                    eventClick: function (info) {
+                        info.jsEvent.preventDefault();
+                        if (info.event.extendedProps.type === 'agenda') {
+                            abrirModalEvento(info.event.id);
+                        } else if (info.event.extendedProps.type === 'tarefa') {
+                            abrirModalTarefa(info.event.id);
+                        }
+                    },
+                    eventContent: function(arg) {
+                        const props = arg.event.extendedProps;
+                        let icon = 'fa-star';
+                        if (props.type === 'tarefa') {
+                            icon = 'fa-tasks';
+                        } else if (props.data && props.data.tipo_evento) {
+                            switch(props.data.tipo_evento) {
+                                case 'Audiência': icon = 'fa-gavel'; break;
+                                case 'Reunião': icon = 'fa-handshake'; break;
+                                case 'Prazo Processual': icon = 'fa-file-signature'; break;
+                            }
+                        }
+                        return { html: `<div class="fc-event-main-frame"><i class="fa ${icon}" style="margin-right: 6px;"></i>${arg.event.title}</div>` };
+                    },
+                    loading: function(isLoading) {
+                        if (isLoading) {
+                            showSpinner('Carregando calendário...');
+                        } else {
+                            hideSpinner();
+                        }
+                    },
+                    windowResize: function (view) {
+                        if (window.innerWidth < 768) {
+                            calendar.changeView('listWeek');
+                        } else {
+                            calendar.changeView('dayGridMonth');
+                        }
                     }
-                }
-            });
-            calendar.render();
+                });
+                calendar.render();
+            }
         }
 
         async function renderCasos(page = 1) {
@@ -2162,21 +2188,26 @@
                 return;
             }
 
-            let totalReceitas = 0, totalDespesas = 0, saldo = 0;
+            let totalRecebido = 0, totalAReceber = 0, totalDespesas = 0, saldo = 0;
             snapshot.forEach(doc => {
                 const r = doc.data();
                 if (r.tipo === 'Receber') {
-                    totalReceitas += Number(r.valor);
-                } else {
+                    if (r.status_pg === 'Pago') {
+                        totalRecebido += Number(r.valor);
+                    } else if (r.status_pg === 'Pendente') {
+                        totalAReceber += Number(r.valor);
+                    }
+                } else { // Assumindo que tipo 'Pagar'
                     totalDespesas += Number(r.valor);
                 }
             });
-            saldo = totalReceitas - totalDespesas;
+            saldo = totalRecebido - totalDespesas;
 
             resumo.innerHTML = `
-                <div class="card"><i class="icon fa fa-arrow-up" style="color:var(--success)"></i><div class="value">${fmtCurrency(totalReceitas)}</div><div class="label">Total de Receitas</div></div>
+                <div class="card"><i class="icon fa fa-hand-holding-dollar" style="color:var(--success)"></i><div class="value">${fmtCurrency(totalRecebido)}</div><div class="label">Total Recebido</div></div>
+                <div class="card"><i class="icon fa fa-hourglass-half" style="color:var(--warning)"></i><div class="value">${fmtCurrency(totalAReceber)}</div><div class="label">Total a Receber</div></div>
                 <div class="card"><i class="icon fa fa-arrow-down" style="color:var(--danger)"></i><div class="value">${fmtCurrency(totalDespesas)}</div><div class="label">Total de Despesas</div></div>
-                <div class="card"><i class="icon fa fa-balance-scale" style="color:var(--info)"></i><div class="value">${fmtCurrency(saldo)}</div><div class="label">Saldo</div></div>
+                <div class="card"><i class="icon fa fa-balance-scale" style="color:var(--info)"></i><div class="value">${fmtCurrency(saldo)}</div><div class="label">Saldo (Recebido - Desp.)</div></div>
             `;
 
             table.innerHTML = `<table><thead><tr><th>Descrição</th><th>Tipo</th><th>Categoria</th><th>Valor</th><th>Data</th><th>Status</th><th>Ações</th></tr></thead><tbody>
@@ -2341,7 +2372,7 @@
             $('#modal-documento').classList.add('active');
         }
 
-        async function abrirModalEvento(id = null) {
+        async function abrirModalEvento(id = null, defaultDate = null) {
             showSpinner('Carregando...');
             $('#modal-evento form').reset();
             $('#evento-id').value = '';
@@ -2367,6 +2398,13 @@
                 }
             } else {
                 $('#evento-modal-titulo').innerText = 'Novo Evento / Prazo';
+                if (defaultDate) {
+                    // Formata a data para o input datetime-local (YYYY-MM-DDTHH:mm)
+                    const now = new Date();
+                    const hours = String(now.getHours()).padStart(2, '0');
+                    const minutes = String(now.getMinutes()).padStart(2, '0');
+                    $('#evento-datahora').value = `${defaultDate.split('T')[0]}T${hours}:${minutes}`;
+                }
             }
             hideSpinner();
             $('#modal-evento').classList.add('active');
@@ -2540,8 +2578,8 @@
                 }
                 showNotif('success', 'Evento salvo com sucesso!');
                 fecharModal('modal-evento');
-                renderAgenda();
-                loadDashboard(); // Atualiza o calendário
+                if (calendar) calendar.refetchEvents(); // Atualiza o calendário
+                renderAgenda(); // Atualiza a lista de agenda se estiver visível
             } catch (err) {
                 console.error(err);
                 showNotif('danger', 'Erro ao salvar o evento.');
