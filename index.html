@@ -1061,8 +1061,8 @@
     <div id="login-panel">
         <h2><i class="fa-solid fa-scale-balanced"></i> Login do Advogado</h2>
         <div class="form-group">
-            <label for="login-email">Usuário</label>
-            <input id="login-usuario" type="text" placeholder="Usuário" required>
+            <label for="login-email">Email</label>
+            <input id="login-email" type="email" placeholder="seu@email.com" required>
         </div>
         <div class="form-group">
             <label for="login-senha">Senha</label>
@@ -1534,11 +1534,9 @@
 
     <!-- Firebase -->
     <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-auth.js"></script>
     <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-firestore.js"></script>
     
-
-    <!-- Configuração do Firebase -->
-    <script src="firebase-config.js"></script>
 
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.11/index.global.min.js"></script>
@@ -1546,6 +1544,19 @@
         // =================================================================================
         // PAINEL JURÍDICO - SCRIPT COMPLETO (Versão Firebase)
         // =================================================================================
+
+        // Cole aqui as configurações do seu projeto Firebase
+        const firebaseConfig = {
+            apiKey: "AIzaSyBlQ82VwKC5DWScw0DmMOfoG8B5OHc9v1w",
+            authDomain: "banco-de-dados-adv.firebaseapp.com",
+            projectId: "banco-de-dados-adv",
+            storageBucket: "banco-de-dados-adv.firebasestorage.app",
+            messagingSenderId: "948017779164",
+            appId: "1:948017779164:web:fd97b016849af7eb337f19"
+        };
+        // Inicializa o Firebase
+        firebase.initializeApp(firebaseConfig);
+        const db = firebase.firestore();
 
         const $ = (s) => document.querySelector(s);
         const $$ = (s) => document.querySelectorAll(s);
@@ -1998,14 +2009,15 @@
             const paginatedRows = rows.slice(start, end);
 
             table.innerHTML = `<table><thead><tr><th>Título</th><th>Cliente</th><th>Caso</th><th>Data</th><th>Arquivo</th><th>Ações</th></tr></thead><tbody>
+
             ${paginatedRows.map(r => `<tr>
                 <td data-label="Título">${r.titulo}</td>
                 <td data-label="Cliente">${r.clienteNome}</td>
                 <td data-label="Caso">${r.casoNumero}</td>
                 <td data-label="Data">${fmtDate(r.data)}</td>
-                <td data-label="Arquivo">${r.nome_arquivo}</td>
+                <td data-label="Arquivo"><a href="${r.link}" target="_blank" class="btn btn-info"><i class="fa fa-download"></i> Abrir</a></td>
                 <td data-label="Ações"><div class="actions">
-                    <a href="${r.link}" target="_blank" class="btn-info" title="Ver Documento"><i class="fa-regular fa-eye"></i></a>
+                    <button onclick="abrirModalDocumento('${r.id}')" title="Editar"><i class="fa fa-edit"></i></button>
                     <button onclick="delRow('docs', '${r.id}', () => renderDocumentos(${page}))" title="Excluir"><i class="fa fa-trash"></i></button>
                 </div></td>
             </tr>`).join('')}</tbody></table>`;
@@ -2029,51 +2041,36 @@
             $('#tabela-agenda').innerHTML = SPINNER_HTML;
             const dataFiltro = $('#agenda-filtro-data').value;
             const tipoFiltro = $('#agenda-filtro-tipo').value;
+
             let query = db.collection('agenda');
             if (tipoFiltro) query = query.where('tipo_evento', '==', tipoFiltro);
 
-            const [clientesSnapshot, casosSnapshot, agendaSnapshot] = await Promise.all([
-                db.collection('clientes').get(),
-                db.collection('casos').get(),
-                query.orderBy('datahora', 'desc').get()
-            ]);
-
-            const clientesMap = new Map(clientesSnapshot.docs.map(doc => [doc.id, doc.data().nome]));
-            const casosMap = new Map(casosSnapshot.docs.map(doc => [doc.id, doc.data().numero]));
-
+            const snapshot = await query.orderBy('datahora', 'desc').get();
             const table = $('#tabela-agenda');
             const paginacaoContainer = $('#paginacao-agenda');
             paginacaoContainer.innerHTML = '';
 
-            if (agendaSnapshot.empty) {
+            if (snapshot.empty) {
                 table.innerHTML = `<p style="text-align:center; padding: 2rem;">Nenhum evento encontrado.</p>`;
                 return;
             }
 
-            let rows = agendaSnapshot.docs.map(doc => {
-                const r = { id: doc.id, ...doc.data() };
-                r.clienteNome = clientesMap.get(r.cliente_id) || '';
-                r.casoNumero = casosMap.get(r.caso_id) || '';
-                return r;
-            }).filter(r => {
-                return !dataFiltro || (r.datahora && r.datahora.substring(0, 10) === dataFiltro);
-            });
+            let rows = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }))
+                .filter(r => !dataFiltro || r.datahora.startsWith(dataFiltro));
 
             const totalRows = rows.length;
-            const rowsPerPage = 20; // Itens por página
+            const rowsPerPage = 20;
             const totalPages = Math.ceil(totalRows / rowsPerPage);
             const start = (page - 1) * rowsPerPage;
             const end = start + rowsPerPage;
             const paginatedRows = rows.slice(start, end);
 
-            table.innerHTML = `<table><thead><tr><th>Evento/Prazo</th><th>Tipo</th><th>Cliente/Caso</th><th>Data/Hora</th><th>Local / Link</th><th>Descrição</th><th>Status</th><th>Ações</th></tr></thead><tbody>
+            table.innerHTML = `<table><thead><tr><th>Título</th><th>Tipo</th><th>Data/Hora</th><th>Local</th><th>Status</th><th>Ações</th></tr></thead><tbody>
             ${paginatedRows.map(r => `<tr>
-                <td data-label="Evento">${r.titulo}</td>
+                <td data-label="Título">${r.titulo}</td>
                 <td data-label="Tipo">${r.tipo_evento}</td>
-                <td data-label="Cliente/Caso">${r.clienteNome}${r.casoNumero ? ` / ${r.casoNumero}` : ''}</td>
                 <td data-label="Data/Hora">${fmtDateTime(r.datahora)}</td>
-                <td data-label="Local / Link">${r.local || ''}</td>
-                <td data-label="Descrição">${r.descricao || ''}</td>
+                <td data-label="Local">${r.local || ''}</td>
                 <td data-label="Status"><span class="badge ${r.status}">${r.status}</span></td>
                 <td data-label="Ações"><div class="actions">
                     <button onclick="abrirModalEvento('${r.id}')" title="Editar"><i class="fa fa-edit"></i></button>
@@ -2096,134 +2093,40 @@
             }
         }
 
-        async function renderCasosPorCliente(page = 1) {
-            $('#casos-por-cliente-container').innerHTML = SPINNER_HTML;
-            const busca = $('#buscar-casos-por-cliente').value.toLowerCase();
-
-            const [clientesSnapshot, casosSnapshot] = await Promise.all([
-                db.collection('clientes').orderBy('nome').get(),
-                db.collection('casos').get()
-            ]);
-
-            const casosPorCliente = new Map();
-            casosSnapshot.forEach(doc => {
-                const caso = { id: doc.id, ...doc.data() };
-                if (!casosPorCliente.has(caso.cliente_id)) {
-                    casosPorCliente.set(caso.cliente_id, []);
-                }
-                casosPorCliente.get(caso.cliente_id).push(caso);
-            });
-
-            let clientes = clientesSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }))
-                .filter(c => !busca || c.nome.toLowerCase().includes(busca));
-
-            const container = $('#casos-por-cliente-container');
-            const paginacaoContainer = $('#paginacao-casos-por-cliente');
-            paginacaoContainer.innerHTML = '';
-            container.innerHTML = '';
-
-            if (clientes.length === 0) {
-                container.innerHTML = `<p style="text-align:center; padding: 2rem;">Nenhum cliente encontrado.</p>`;
-                return;
-            }
-
-            const totalRows = clientes.length;
-            const rowsPerPage = 5; // Clientes por página
-            const totalPages = Math.ceil(totalRows / rowsPerPage);
-            const start = (page - 1) * rowsPerPage;
-            const end = start + rowsPerPage;
-            const paginatedClientes = clientes.slice(start, end);
-
-            paginatedClientes.forEach(cliente => {
-                const casos = casosPorCliente.get(cliente.id) || [];
-                const card = document.createElement('div');
-                card.className = 'cliente-card';
-                card.innerHTML = `<h3>${cliente.nome}</h3>`;
-                if (casos.length > 0) {
-                    card.innerHTML += `
-                        <div class="table-wrapper">
-                            <table>
-                                <thead><tr><th>Nº Processo</th><th>Partes</th><th>Status</th></tr></thead>
-                                <tbody>
-                                    ${casos.map(c => `
-                                        <tr>
-                                            <td data-label="Nº Processo">${c.numero}</td>
-                                            <td data-label="Partes">${c.partes || ''}</td>
-                                            <td data-label="Status"><span class="badge ${c.status}">${c.status}</span></td>
-                                        </tr>
-                                    `).join('')}
-                                </tbody>
-                            </table>
-                        </div>
-                    `;
-                } else {
-                    card.innerHTML += `<p>Nenhum caso vinculado a este cliente.</p>`;
-                }
-                container.appendChild(card);
-            });
-
-            if (totalPages > 1) {
-                let paginationHTML = '';
-                if (page > 1) {
-                    paginationHTML += `<button onclick="renderCasosPorCliente(${page - 1})">&laquo; Anterior</button>`;
-                }
-                for (let i = 1; i <= totalPages; i++) {
-                    paginationHTML += `<button onclick="renderCasosPorCliente(${i})" class="${i === page ? 'active' : ''}">${i}</button>`;
-                }
-                if (page < totalPages) {
-                    paginationHTML += `<button onclick="renderCasosPorCliente(${page + 1})">Próximo &raquo;</button>`;
-                }
-                paginacaoContainer.innerHTML = paginationHTML;
-            }
-        }
-
         async function renderTarefas(page = 1) {
             $('#tabela-tarefas').innerHTML = SPINNER_HTML;
             const status = $('#filtro-tarefa-status').value;
             const prioridade = $('#filtro-tarefa-prioridade').value;
+
             let query = db.collection('tarefas');
             if (status) query = query.where('status', '==', status);
             if (prioridade) query = query.where('prioridade', '==', prioridade);
 
-            const [clientesSnapshot, casosSnapshot, tarefasSnapshot] = await Promise.all([
-                db.collection('clientes').get(),
-                db.collection('casos').get(),
-                query.orderBy('prazo_data', 'desc').get()
-            ]);
-
-            const clientesMap = new Map(clientesSnapshot.docs.map(doc => [doc.id, doc.data().nome]));
-            const casosMap = new Map(casosSnapshot.docs.map(doc => [doc.id, doc.data().numero]));
-
+            const snapshot = await query.orderBy('prazo_data').get();
             const table = $('#tabela-tarefas');
             const paginacaoContainer = $('#paginacao-tarefas');
             paginacaoContainer.innerHTML = '';
 
-            if (tarefasSnapshot.empty) {
+            if (snapshot.empty) {
                 table.innerHTML = `<p style="text-align:center; padding: 2rem;">Nenhuma tarefa encontrada.</p>`;
                 return;
             }
 
-            let rows = tarefasSnapshot.docs.map(doc => {
-                const r = { id: doc.id, ...doc.data() };
-                r.clienteNome = clientesMap.get(r.cliente_id) || '';
-                r.casoNumero = casosMap.get(r.caso_id) || '';
-                return r;
-            });
+            let rows = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
 
             const totalRows = rows.length;
-            const rowsPerPage = 20; // Itens por página
+            const rowsPerPage = 20;
             const totalPages = Math.ceil(totalRows / rowsPerPage);
             const start = (page - 1) * rowsPerPage;
             const end = start + rowsPerPage;
             const paginatedRows = rows.slice(start, end);
 
-            table.innerHTML = `<table><thead><tr><th></th><th>Descrição</th><th>Cliente/Caso</th><th>Prazo</th><th>Prioridade</th><th>Ações</th></tr></thead><tbody>
+            table.innerHTML = `<table><thead><tr><th>Descrição</th><th>Status</th><th>Prioridade</th><th>Prazo</th><th>Ações</th></tr></thead><tbody>
             ${paginatedRows.map(r => `<tr>
-                <td data-label="Status"><input type="checkbox" onchange="concluirTarefa('${r.id}', this.checked)" ${r.status === 'Concluída' ? 'checked' : ''}></td>
-                <td data-label="Descrição" style="${r.status === 'Concluída' ? 'text-decoration:line-through; color:var(--muted-text)' : ''}">${r.descricao}</td>
-                <td data-label="Cliente/Caso">${r.clienteNome}${r.casoNumero ? ` / ${r.casoNumero}` : ''}</td>
-                <td data-label="Prazo">${fmtDate(r.prazo_data)}</td>
+                <td data-label="Descrição">${r.descricao}</td>
+                <td data-label="Status"><span class="badge ${r.status}">${r.status}</span></td>
                 <td data-label="Prioridade"><span class="badge ${r.prioridade}">${r.prioridade}</span></td>
+                <td data-label="Prazo">${fmtDate(r.prazo_data)}</td>
                 <td data-label="Ações"><div class="actions">
                     <button onclick="abrirModalTarefa('${r.id}')" title="Editar"><i class="fa fa-edit"></i></button>
                     <button onclick="delRow('tarefas', '${r.id}', () => renderTarefas(${page}))" title="Excluir"><i class="fa fa-trash"></i></button>
@@ -2245,160 +2148,113 @@
             }
         }
 
-        async function loadFinanceiro() {
-            $('#resumo-financeiro').innerHTML = SPINNER_HTML;
+        async function renderFinanceiro() {
             $('#tabela-financeiro').innerHTML = SPINNER_HTML;
-
-            const financasSnapshot = await db.collection('fin').get();
-            let total_realizado = 0;
-            let total_despesas = 0;
-            let a_receber = 0;
-
-            financasSnapshot.forEach(doc => {
-                const fin = doc.data();
-                if (fin.tipo === 'Receber' && fin.status_pg === 'Pago') {
-                    total_realizado += Number(fin.valor);
-                } else if (fin.tipo === 'Pagar' && fin.status_pg === 'Pago') {
-                    total_despesas += Number(fin.valor);
-                } else if (fin.tipo === 'Receber' && fin.status_pg === 'Pendente') {
-                    a_receber += Number(fin.valor);
-                }
-            });
-
-            $('#resumo-financeiro').innerHTML = `
-                <div class="card"><i class="icon fa fa-arrow-up" style="color:var(--success)"></i><div class="value">${fmtCurrency(total_realizado)}</div><div class="label">Total Realizado</div></div>
-                <div class="card"><i class="icon fa fa-arrow-down" style="color:var(--danger)"></i><div class="value">${fmtCurrency(total_despesas)}</div><div class="label">Total Despesas</div></div>
-                <div class="card"><i class="icon fa fa-balance-scale" style="color:var(--info)"></i><div class="value">${fmtCurrency(total_realizado - total_despesas)}</div><div class="label">Saldo</div></div>
-                <div class="card"><i class="icon fa fa-hourglass-half" style="color:var(--warning)"></i><div class="value">${fmtCurrency(a_receber)}</div><div class="label">A Receber</div></div>
-            `;
+            $('#resumo-financeiro').innerHTML = SPINNER_HTML;
 
             const snapshot = await db.collection('fin').orderBy('data', 'desc').get();
             const table = $('#tabela-financeiro');
+            const resumo = $('#resumo-financeiro');
+
             if (snapshot.empty) {
-                table.innerHTML = `<p style="text-align:center; padding: 2rem;">Nenhum lançamento financeiro.</p>`;
+                table.innerHTML = `<p style="text-align:center; padding: 2rem;">Nenhum lançamento encontrado.</p>`;
+                resumo.innerHTML = '';
                 return;
             }
 
-            let rows = [];
-            for (const doc of snapshot.docs) {
+            let totalReceitas = 0, totalDespesas = 0, saldo = 0;
+            snapshot.forEach(doc => {
+                const r = doc.data();
+                if (r.tipo === 'Receber') {
+                    totalReceitas += Number(r.valor);
+                } else {
+                    totalDespesas += Number(r.valor);
+                }
+            });
+            saldo = totalReceitas - totalDespesas;
+
+            resumo.innerHTML = `
+                <div class="card"><i class="icon fa fa-arrow-up" style="color:var(--success)"></i><div class="value">${fmtCurrency(totalReceitas)}</div><div class="label">Total de Receitas</div></div>
+                <div class="card"><i class="icon fa fa-arrow-down" style="color:var(--danger)"></i><div class="value">${fmtCurrency(totalDespesas)}</div><div class="label">Total de Despesas</div></div>
+                <div class="card"><i class="icon fa fa-balance-scale" style="color:var(--info)"></i><div class="value">${fmtCurrency(saldo)}</div><div class="label">Saldo</div></div>
+            `;
+
+            table.innerHTML = `<table><thead><tr><th>Descrição</th><th>Tipo</th><th>Categoria</th><th>Valor</th><th>Data</th><th>Status</th><th>Ações</th></tr></thead><tbody>
+            ${snapshot.docs.map(doc => {
                 const r = { id: doc.id, ...doc.data() };
-                let clienteNome = '';
-                if (r.cliente_id) {
-                    const clienteDoc = await db.collection('clientes').doc(r.cliente_id).get();
-                    if (clienteDoc.exists) {
-                        clienteNome = clienteDoc.data().nome;
-                    }
-                }
-                r.clienteNome = clienteNome;
-
-                let casoNumero = '';
-                if (r.caso_id) {
-                    const casoDoc = await db.collection('casos').doc(r.caso_id).get();
-                    if (casoDoc.exists) {
-                        casoNumero = casoDoc.data().numero;
-                    }
-                }
-                r.casoNumero = casoNumero;
-                rows.push(r);
-            }
-
-            table.innerHTML = `<table><thead><tr><th>Descrição</th><th>Cliente/Caso</th><th>Data</th><th>Categoria</th><th>Status</th><th>Valor</th><th>Ações</th></tr></thead><tbody>
-            ${rows.map(r => `<tr>
-                <td data-label="Descrição">${r.descricao} <span class="badge ${r.tipo}">${r.tipo}</span></td>
-                <td data-label="Cliente/Caso">${r.clienteNome}${r.casoNumero ? ` / ${r.casoNumero}` : ''}</td>
-                <td data-label="Data">${fmtDate(r.data)}</td>
-                <td data-label="Categoria">${r.categoria}</td>
-                <td data-label="Status"><span class="badge ${r.status_pg}">${r.status_pg}</span></td>
-                <td data-label="Valor" style="color:${r.tipo === 'Receber' ? 'var(--success)' : 'var(--danger)'}; font-weight:600;">${fmtCurrency(r.valor)}</td>
-                <td data-label="Ações"><div class="actions">
-                    <button onclick="abrirModalFin('${r.tipo}', '${r.id}')" title="Editar"><i class="fa fa-edit"></i></button>
-                    <button onclick="delRow('fin', '${r.id}', loadFinanceiro)" title="Excluir"><i class="fa fa-trash"></i></button>
-                </div></td>
-            </tr>`).join('')}</tbody></table>`;
+                return `<tr>
+                    <td data-label="Descrição">${r.descricao}</td>
+                    <td data-label="Tipo"><span class="badge ${r.tipo}">${r.tipo}</span></td>
+                    <td data-label="Categoria">${r.categoria}</td>
+                    <td data-label="Valor">${fmtCurrency(r.valor)}</td>
+                    <td data-label="Data">${fmtDate(r.data)}</td>
+                    <td data-label="Status"><span class="badge ${r.status_pg}">${r.status_pg}</span></td>
+                    <td data-label="Ações"><div class="actions">
+                        <button onclick="abrirModalFin(null, '${r.id}')" title="Editar"><i class="fa fa-edit"></i></button>
+                        <button onclick="delRow('fin', '${r.id}', renderFinanceiro)" title="Excluir"><i class="fa fa-trash"></i></button>
+                    </div></td>
+                </tr>`
+            }).join('')}</tbody></table>`;
         }
 
         async function renderCasosPorCliente(page = 1) {
-            $('#casos-por-cliente-container').innerHTML = SPINNER_HTML;
+            const container = $('#casos-por-cliente-container');
+            container.innerHTML = SPINNER_HTML;
             const busca = $('#buscar-casos-por-cliente').value.toLowerCase();
 
-            // 1. Fetch all clients and cases
             const [clientesSnapshot, casosSnapshot] = await Promise.all([
                 db.collection('clientes').orderBy('nome').get(),
                 db.collection('casos').get()
             ]);
 
-            const container = $('#casos-por-cliente-container');
+            const casosPorCliente = new Map();
+            casosSnapshot.forEach(doc => {
+                const caso = { id: doc.id, ...doc.data() };
+                if (!casosPorCliente.has(caso.cliente_id)) {
+                    casosPorCliente.set(caso.cliente_id, []);
+                }
+                casosPorCliente.get(caso.cliente_id).push(caso);
+            });
+
+            let clientesFiltrados = clientesSnapshot.docs
+                .map(doc => ({ id: doc.id, ...doc.data() }))
+                .filter(c => !busca || c.nome.toLowerCase().includes(busca));
+
             const paginacaoContainer = $('#paginacao-casos-por-cliente');
             paginacaoContainer.innerHTML = '';
-
-            if (clientesSnapshot.empty) {
-                container.innerHTML = '<p style="text-align:center; padding: 2rem;">Nenhum cliente encontrado.</p>';
-                return;
-            }
-
-            const casos = casosSnapshot.docs.map(d => ({ id: d.id, ...d.data() }));
-
-            // 2. Filter clients based on search and if they have cases
-            const clientesFiltrados = clientesSnapshot.docs
-                .map(doc => ({ id: doc.id, ...doc.data() }))
-                .filter(cliente => {
-                    const correspondeBusca = !busca || cliente.nome.toLowerCase().includes(busca);
-                    const temCasos = casos.some(c => c.cliente_id === cliente.id);
-                    return correspondeBusca && temCasos;
-                });
-
-            if (clientesFiltrados.length === 0) {
-                container.innerHTML = '<p style="text-align:center; padding: 2rem;">Nenhum cliente com casos encontrado para a busca.</p>';
-                return;
-            }
-
-            // 3. Paginate the results
-            const rowsPerPage = 20;
             const totalRows = clientesFiltrados.length;
+            const rowsPerPage = 10; // Menos clientes por página para melhor visualização
             const totalPages = Math.ceil(totalRows / rowsPerPage);
             const start = (page - 1) * rowsPerPage;
             const end = start + rowsPerPage;
-            const paginatedClients = clientesFiltrados.slice(start, end);
+            const paginatedClientes = clientesFiltrados.slice(start, end);
 
-            container.innerHTML = ''; // Clear for new content
+            if (paginatedClientes.length === 0) {
+                container.innerHTML = `<p style="text-align:center; padding: 2rem;">Nenhum cliente encontrado.</p>`;
+                return;
+            }
 
-            // 4. Render the cards for the current page
-            paginatedClients.forEach(cliente => {
-                const casosDoCliente = casos.filter(c => c.cliente_id === cliente.id);
-
-                const card = document.createElement('div');
-                card.className = 'cliente-card';
-                card.innerHTML = `
-                    <h3>${cliente.nome}</h3>
-                    <div class="table-wrapper">
-                        <table>
-                            <thead>
-                                <tr>
-                                    <th>Nº do Processo</th>
-                                    <th>Status</th>
-                                    <th>Ações</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                ${casosDoCliente.map(caso => `
-                                    <tr>
-                                        <td data-label="Nº do Processo">${caso.numero}</td>
-                                        <td data-label="Status"><span class="badge ${caso.status}">${caso.status}</span></td>
-                                        <td data-label="Ações">
-                                            <div class="actions">
-                                                <button onclick="abrirModalCaso('${caso.id}')" title="Editar"><i class="fa fa-edit"></i></button>
-                                            </div>
-                                        </td>
-                                    </tr>
-                                `).join('')}
-                            </tbody>
-                        </table>
-                    </div>
-                `;
-                container.appendChild(card);
+            let html = '';
+            paginatedClientes.forEach(cliente => {
+                html += `<div class="cliente-card"><h3>${cliente.nome}</h3>`;
+                const casos = casosPorCliente.get(cliente.id) || [];
+                if (casos.length > 0) {
+                    html += '<table><thead><tr><th>Nº Processo</th><th>Partes</th><th>Status</th></tr></thead><tbody>';
+                    casos.forEach(caso => {
+                        html += `<tr>
+                            <td data-label="Nº Processo">${caso.numero}</td>
+                            <td data-label="Partes">${caso.partes || ''}</td>
+                            <td data-label="Status"><span class="badge ${caso.status}">${caso.status}</span></td>
+                        </tr>`;
+                    });
+                    html += '</tbody></table>';
+                } else {
+                    html += '<p>Nenhum caso vinculado a este cliente.</p>';
+                }
+                html += '</div>';
             });
+            container.innerHTML = html;
 
-            // 5. Render pagination controls
             if (totalPages > 1) {
                 let paginationHTML = '';
                 if (page > 1) {
@@ -2414,134 +2270,175 @@
             }
         }
 
-        /* ------------- LISTA DE FUNÇÕES DE RENDERIZAÇÃO ------------- */
-        const renderFunctions = [loadDashboard, renderCasos, renderClientes, renderDocumentos, renderAgenda, renderTarefas, loadFinanceiro, renderCasosPorCliente, () => { }];
+        /* ------------- FUNÇÕES DE ABERTURA DE MODAIS ------------- */
 
-        /* ------------- UI & NAVEGAÇÃO ------------- */
-        function abrirTab(index) {
-            $$('nav button, .sidebar-nav button').forEach(b => b.classList.remove('active'));
-            $(`#nav${index}`).classList.add('active');
-            $(`#nav${index}-sidebar`).classList.add('active');
-
-            $$('.tab-content').forEach(t => t.classList.remove('active'));
-            $(`#tab${index}`).classList.add('active');
-
-            if (renderFunctions[index]) {
-                renderFunctions[index]();
-            }
-        }
-
-        /* ------------- MODAIS E AÇÕES DE SALVAMENTO ------------- */
-
-        async function delRow(collectionName, id, renderCallback) {
-            if (confirm("Tem certeza que deseja excluir este registro? A ação não pode ser desfeita.")) {
-                showSpinner('Excluindo registro...');
-                try {
-                    if (collectionName === 'docs') {
-                        try {
-                            const docRef = await db.collection('docs').doc(id).get();
-                            if (docRef.exists) {
-                                const docData = docRef.data();
-                                if (docData.path_arquivo) {
-                                    const storageRef = storage.ref(docData.path_arquivo);
-                                    await storageRef.delete();
-                                }
-                            }
-                        } catch (e) { console.error("Documento não encontrado no storage, prosseguindo."); }
-                    }
-
-                    await db.collection(collectionName).doc(id).delete();
-                    showNotif('success', 'Registro excluído.');
-                    if (renderCallback) renderCallback();
-                    if (['casos', 'clientes', 'tarefas', 'agenda', 'fin'].includes(collectionName)) loadDashboard();
-                } catch (error) {
-                    showNotif('danger', 'Erro ao excluir: ' + error.message);
-                    console.error(error);
-                } finally {
-                    hideSpinner();
+        async function abrirModalCaso(id = null) {
+            showSpinner('Carregando...');
+            $('#modal-caso form').reset();
+            $('#caso-id').value = '';
+            await populateSelect('caso-cliente', 'clientes', 'id', 'nome', null, 'Selecione o cliente');
+            if (id) {
+                $('#modal-caso-titulo').innerText = 'Editar Caso';
+                const doc = await db.collection('casos').doc(id).get();
+                if (doc.exists) {
+                    const r = doc.data();
+                    $('#caso-id').value = id;
+                    $('#caso-cliente').value = r.cliente_id;
+                    $('#caso-numero').value = r.numero;
+                    $('#caso-partes').value = r.partes;
+                    $('#caso-responsavel').value = r.responsavel;
+                    $('#caso-data').value = r.data;
+                    $('#caso-status').value = r.status;
                 }
             }
+            else {
+                $('#modal-caso-titulo').innerText = 'Novo Caso';
+            }
+            hideSpinner();
+            $('#modal-caso').classList.add('active');
         }
 
         async function abrirModalCliente(id = null) {
             $('#modal-cliente form').reset();
             $('#cliente-id').value = '';
             if (id) {
-                const doc = await db.collection('clientes').doc(id).get();
-                if (!doc.exists) return showNotif('danger', 'Cliente não encontrado.');
-                const r = { id: doc.id, ...doc.data() };
                 $('#modal-cliente-titulo').innerText = 'Editar Cliente';
-                $('#cliente-id').value = r.id;
-                $('#cliente-nome').value = r.nome;
-                $('#cliente-email').value = r.email;
-                $('#cliente-fone').value = r.fone;
-                $('#cliente-notas').value = r.notas;
+                const doc = await db.collection('clientes').doc(id).get();
+                if (doc.exists) {
+                    const r = doc.data();
+                    $('#cliente-id').value = id;
+                    $('#cliente-nome').value = r.nome;
+                    $('#cliente-email').value = r.email;
+                    $('#cliente-fone').value = r.fone;
+                    $('#cliente-notas').value = r.notas;
+                }
             } else {
                 $('#modal-cliente-titulo').innerText = 'Novo Cliente';
             }
             $('#modal-cliente').classList.add('active');
         }
 
-        async function salvarCliente(event) {
-            event.preventDefault();
-            showSpinner('Salvando cliente...');
-            const id = $('#cliente-id').value;
-            const record = {
-                nome: $('#cliente-nome').value,
-                email: $('#cliente-email').value,
-                fone: $('#cliente-fone').value,
-                notas: $('#cliente-notas').value,
-            };
-            if (!record.nome) {
-                hideSpinner();
-                return showNotif('danger', 'O nome do cliente é obrigatório.');
-            }
+        async function abrirModalDocumento(id = null) {
+            showSpinner('Carregando...');
+            $('#modal-documento form').reset();
+            $('#doc-id').value = '';
+            await populateSelect('doc-cliente', 'clientes', 'id', 'nome', null, 'Selecione o cliente');
+            $('#doc-caso').innerHTML = '<option value="">Nenhum</option>'; // Reset
+            $('#doc-cliente').onchange = () => populateSelect('doc-caso', 'casos', 'id', 'numero', $('#doc-cliente').value, 'Nenhum');
 
-            try {
-                if (id) {
-                    await db.collection('clientes').doc(id).update(record);
-                } else {
-                    await db.collection('clientes').add(record);
-                }
-                showNotif('success', 'Cliente salvo!');
-                fecharModal('modal-cliente');
-                renderClientes();
-                loadDashboard();
-            } catch (error) {
-                showNotif('danger', 'Erro: ' + error.message);
-            } finally {
-                hideSpinner();
-            }
-        }
-
-        async function abrirModalCaso(id = null) {
-            $('#modal-caso form').reset();
-            $('#caso-id').value = '';
-            await populateSelect('caso-cliente', 'clientes', 'id', 'nome', null, 'Selecione um cliente');
             if (id) {
-                const doc = await db.collection('casos').doc(id).get();
-                if (!doc.exists) return showNotif('danger', 'Caso não encontrado.');
-                const r = { id: doc.id, ...doc.data() };
-                $('#modal-caso-titulo').innerText = 'Editar Caso';
-                $('#caso-id').value = r.id;
-                $('#caso-cliente').value = r.cliente_id;
-                $('#caso-numero').value = r.numero;
-                $('#caso-partes').value = r.partes;
-                $('#caso-responsavel').value = r.responsavel;
-                $('#caso-data').value = r.data;
-                $('#caso-status').value = r.status;
-            } else {
-                $('#modal-caso-titulo').innerText = 'Novo Caso';
-                $('#caso-data').valueAsDate = new Date();
+                const doc = await db.collection('docs').doc(id).get();
+                if (doc.exists) {
+                    const r = doc.data();
+                    $('#doc-id').value = id;
+                    $('#doc-titulo').value = r.titulo;
+                    $('#doc-link').value = r.link;
+                    $('#doc-cliente').value = r.cliente_id;
+                    await populateSelect('doc-caso', 'casos', 'id', 'numero', r.cliente_id, 'Nenhum', r.caso_id);
+                }
             }
-            $('#modal-caso').classList.add('active');
+            hideSpinner();
+            $('#modal-documento').classList.add('active');
         }
 
-        async function salvarCaso(event) {
-            event.preventDefault();
-            showSpinner('Salvando caso...');
+        async function abrirModalEvento(id = null) {
+            showSpinner('Carregando...');
+            $('#modal-evento form').reset();
+            $('#evento-id').value = '';
+            await populateSelect('evento-cliente', 'clientes', 'id', 'nome', null, 'Nenhum');
+            $('#evento-caso').innerHTML = '<option value="">Nenhum</option>';
+
+            if (id) {
+                $('#evento-modal-titulo').innerText = 'Editar Evento';
+                const doc = await db.collection('agenda').doc(id).get();
+                if (doc.exists) {
+                    const r = doc.data();
+                    $('#evento-id').value = id;
+                    $('#evento-titulo').value = r.titulo;
+                    $('#evento-tipo').value = r.tipo_evento;
+                    $('#evento-datahora').value = r.datahora;
+                    $('#evento-local').value = r.local;
+                    $('#evento-status').value = r.status;
+                    $('#evento-descricao').value = r.descricao;
+                    if (r.cliente_id) {
+                        $('#evento-cliente').value = r.cliente_id;
+                        await populateSelect('evento-caso', 'casos', 'id', 'numero', r.cliente_id, 'Nenhum', r.caso_id);
+                    }
+                }
+            } else {
+                $('#evento-modal-titulo').innerText = 'Novo Evento / Prazo';
+            }
+            hideSpinner();
+            $('#modal-evento').classList.add('active');
+        }
+
+        async function abrirModalTarefa(id = null) {
+            showSpinner('Carregando...');
+            $('#modal-tarefa form').reset();
+            $('#tarefa-id').value = '';
+            await populateSelect('tarefa-cliente', 'clientes', 'id', 'nome', null, 'Nenhum');
+            $('#tarefa-caso').innerHTML = '<option value="">Nenhum</option>';
+
+            if (id) {
+                $('#tarefa-modal-titulo').innerText = 'Editar Tarefa';
+                const doc = await db.collection('tarefas').doc(id).get();
+                if (doc.exists) {
+                    const r = doc.data();
+                    $('#tarefa-id').value = id;
+                    $('#tarefa-descricao').value = r.descricao;
+                    $('#tarefa-prioridade').value = r.prioridade;
+                    $('#tarefa-prazo').value = r.prazo_data;
+                    if (r.cliente_id) {
+                        $('#tarefa-cliente').value = r.cliente_id;
+                        await populateSelect('tarefa-caso', 'casos', 'id', 'numero', r.cliente_id, 'Nenhum', r.caso_id);
+                    }
+                }
+            } else {
+                $('#tarefa-modal-titulo').innerText = 'Nova Tarefa';
+            }
+            hideSpinner();
+            $('#modal-tarefa').classList.add('active');
+        }
+
+        async function abrirModalFin(tipo, id = null) {
+            showSpinner('Carregando...');
+            $('#modal-fin form').reset();
+            $('#fin-id').value = '';
+            await populateSelect('fin-cliente', 'clientes', 'id', 'nome', null, 'Nenhum');
+            $('#fin-caso').innerHTML = '<option value="">Nenhum</option>';
+
+            if (id) {
+                const doc = await db.collection('fin').doc(id).get();
+                if (doc.exists) {
+                    const r = doc.data();
+                    $('#fin-titulo').innerText = `Editar Lançamento`;
+                    $('#fin-id').value = id;
+                    $('#fin-tipo').value = r.tipo;
+                    $('#fin-descricao').value = r.descricao;
+                    $('#fin-categoria').value = r.categoria;
+                    $('#fin-valor').value = r.valor;
+                    $('#fin-data').value = r.data;
+                    $('#fin-status').value = r.status_pg;
+                    if (r.cliente_id) {
+                        $('#fin-cliente').value = r.cliente_id;
+                        await populateSelect('fin-caso', 'casos', 'id', 'numero', r.cliente_id, 'Nenhum', r.caso_id);
+                    }
+                }
+            } else {
+                $('#fin-titulo').innerText = `Nova ${tipo === 'Receber' ? 'Receita' : 'Despesa'}`;
+                $('#fin-tipo').value = tipo;
+            }
+            hideSpinner();
+            $('#modal-fin').classList.add('active');
+        }
+
+        /* ------------- FUNÇÕES DE SALVAR/DELETAR ------------- */
+
+        async function salvarCaso(e) {
+            e.preventDefault();
+            showSpinner('Salvando...');
             const id = $('#caso-id').value;
-            const record = {
+            const dados = {
                 cliente_id: $('#caso-cliente').value,
                 numero: $('#caso-numero').value,
                 partes: $('#caso-partes').value,
@@ -2549,65 +2446,68 @@
                 data: $('#caso-data').value,
                 status: $('#caso-status').value,
             };
-            if (!record.cliente_id || !record.numero) {
-                hideSpinner();
-                return showNotif('danger', 'Cliente e Nº do Processo são obrigatórios.');
-            }
-
             try {
                 if (id) {
-                    await db.collection('casos').doc(id).update(record);
+                    await db.collection('casos').doc(id).update(dados);
                 } else {
-                    await db.collection('casos').add(record);
+                    await db.collection('casos').add(dados);
                 }
-                showNotif('success', 'Caso salvo!');
+                showNotif('success', 'Caso salvo com sucesso!');
                 fecharModal('modal-caso');
                 renderCasos();
-                loadDashboard();
-            } catch (error) {
-                showNotif('danger', 'Erro: ' + error.message);
+            } catch (err) {
+                console.error(err);
+                showNotif('danger', 'Erro ao salvar o caso.');
             } finally {
                 hideSpinner();
             }
         }
 
-        async function abrirModalDocumento() {
-            $('#modal-documento form').reset();
-            await populateSelect('doc-cliente', 'clientes', 'id', 'nome', null, 'Selecione um cliente');
-            await populateSelect('doc-caso', 'casos', 'id', 'numero', null, 'Nenhum');
-            $('#modal-documento').classList.add('active');
+        async function salvarCliente(e) {
+            e.preventDefault();
+            showSpinner('Salvando...');
+            const id = $('#cliente-id').value;
+            const dados = {
+                nome: $('#cliente-nome').value,
+                email: $('#cliente-email').value,
+                fone: $('#cliente-fone').value,
+                notas: $('#cliente-notas').value,
+            };
+            try {
+                if (id) {
+                    await db.collection('clientes').doc(id).update(dados);
+                } else {
+                    await db.collection('clientes').add(dados);
+                }
+                showNotif('success', 'Cliente salvo com sucesso!');
+                fecharModal('modal-cliente');
+                renderClientes();
+            } catch (err) {
+                console.error(err);
+                showNotif('danger', 'Erro ao salvar o cliente.');
+            } finally {
+                hideSpinner();
+            }
         }
 
-                async function salvarDocumento(e) {
+        async function salvarDocumento(e) {
             e.preventDefault();
-            const id = $('#doc-id').value;
-            const link = $('#doc-link').value;
-            const cliente_id = $('#doc-cliente').value;
-            const caso_id = $('#doc-caso').value;
-            const titulo = $('#doc-titulo').value;
-
-            if (!cliente_id || !titulo || !link) {
-                showNotif('danger', 'Por favor, preencha todos os campos obrigatórios.');
-                return;
-            }
-
             showSpinner('Salvando...');
+            const id = $('#doc-id').value;
+            const dados = {
+                cliente_id: $('#doc-cliente').value,
+                caso_id: $('#doc-caso').value,
+                titulo: $('#doc-titulo').value,
+                link: $('#doc-link').value,
+                data: new Date().toISOString().split('T')[0] // Data atual
+            };
             try {
-                const docData = {
-                    cliente_id,
-                    caso_id,
-                    titulo,
-                    link,
-                    data: new Date().toISOString()
-                };
-
                 if (id) {
-                    await db.collection('docs').doc(id).update(docData);
-                    showNotif('success', 'Documento atualizado com sucesso!');
+                    await db.collection('docs').doc(id).update(dados);
                 } else {
-                    await db.collection('docs').add(docData);
-                    showNotif('success', 'Documento salvo com sucesso!');
+                    await db.collection('docs').add(dados);
                 }
+                showNotif('success', 'Documento salvo com sucesso!');
                 fecharModal('modal-documento');
                 renderDocumentos();
             } catch (err) {
@@ -2618,257 +2518,186 @@
             }
         }
 
-        async function downloadDoc(id) {
-            const doc = await db.collection('docs').doc(id).get();
-            if (!doc.exists) return showNotif('danger', 'Arquivo não encontrado.');
-            const data = doc.data();
-            window.open(data.download_url, '_blank');
-        }
-
-        async function abrirModalEvento(id = null) {
-            if (!id) {
-                $('#modal-evento form').reset();
-                $('#evento-id').value = '';
-                $('#evento-modal-titulo').innerText = 'Novo Evento / Prazo';
-            }
-            await populateSelect('evento-cliente', 'clientes', 'id', 'nome', null, 'Nenhum');
-            $('#evento-caso').innerHTML = '<option value="">Nenhum</option>';
-            if (id) {
-                const doc = await db.collection('agenda').doc(id).get();
-                if (!doc.exists) return showNotif('danger', 'Evento não encontrado.');
-                const r = { id: doc.id, ...doc.data() };
-                $('#evento-modal-titulo').innerText = 'Editar Evento';
-                $('#evento-id').value = r.id;
-                $('#evento-titulo').value = r.titulo;
-                $('#evento-datahora').value = r.datahora ? r.datahora.slice(0, 16) : '';
-                $('#evento-status').value = r.status;
-                $('#evento-descricao').value = r.descricao;
-                $('#evento-tipo').value = r.tipo_evento;
-                $('#evento-local').value = r.local;
-                if (r.cliente_id) {
-                    await populateSelect('evento-cliente', 'clientes', 'id', 'nome', null, 'Nenhum', r.cliente_id);
-                    await populateSelect('evento-caso', 'casos', 'id', 'numero', r.cliente_id, 'Nenhum', r.caso_id);
-                }
-            }
-            $('#modal-evento').classList.add('active');
-        }
-
-        async function salvarEvento(event) {
-            event.preventDefault();
-            showSpinner('Salvando evento...');
+        async function salvarEvento(e) {
+            e.preventDefault();
+            showSpinner('Salvando...');
             const id = $('#evento-id').value;
-            const record = {
-                cliente_id: $('#evento-cliente').value || null,
-                caso_id: $('#evento-caso').value || null,
+            const dados = {
                 titulo: $('#evento-titulo').value,
+                tipo_evento: $('#evento-tipo').value,
                 datahora: $('#evento-datahora').value,
+                local: $('#evento-local').value,
+                cliente_id: $('#evento-cliente').value,
+                caso_id: $('#evento-caso').value,
                 status: $('#evento-status').value,
                 descricao: $('#evento-descricao').value,
-                tipo_evento: $('#evento-tipo').value,
-                local: $('#evento-local').value
             };
-            if (!record.titulo || !record.datahora || !record.tipo_evento) {
-                hideSpinner();
-                return showNotif('danger', 'Título, Data/Hora e Tipo são obrigatórios.');
-            }
-
             try {
                 if (id) {
-                    await db.collection('agenda').doc(id).update(record);
+                    await db.collection('agenda').doc(id).update(dados);
                 } else {
-                    await db.collection('agenda').add(record);
+                    await db.collection('agenda').add(dados);
                 }
-                showNotif('success', 'Evento salvo!');
+                showNotif('success', 'Evento salvo com sucesso!');
                 fecharModal('modal-evento');
                 renderAgenda();
-                loadDashboard();
-            } catch (error) {
-                showNotif('danger', 'Erro: ' + error.message);
+                loadDashboard(); // Atualiza o calendário
+            } catch (err) {
+                console.error(err);
+                showNotif('danger', 'Erro ao salvar o evento.');
             } finally {
                 hideSpinner();
             }
         }
 
-        async function abrirModalTarefa(id = null) {
-            if (!id) {
-                $('#modal-tarefa form').reset();
-                $('#tarefa-id').value = '';
-                $('#tarefa-modal-titulo').innerText = 'Nova Tarefa';
-            }
-            await populateSelect('tarefa-cliente', 'clientes', 'id', 'nome', null, 'Nenhum');
-            $('#tarefa-caso').innerHTML = '<option value="">Nenhum</option>';
-            if (id) {
-                const doc = await db.collection('tarefas').doc(id).get();
-                if (!doc.exists) return showNotif('danger', 'Tarefa não encontrada.');
-                const r = { id: doc.id, ...doc.data() };
-                $('#tarefa-modal-titulo').innerText = 'Editar Tarefa';
-                $('#tarefa-id').value = r.id;
-                $('#tarefa-descricao').value = r.descricao;
-                $('#tarefa-prioridade').value = r.prioridade;
-                $('#tarefa-prazo').value = r.prazo_data;
-                if (r.cliente_id) {
-                    await populateSelect('tarefa-cliente', 'clientes', 'id', 'nome', null, 'Nenhum', r.cliente_id);
-                    await populateSelect('tarefa-caso', 'casos', 'id', 'numero', r.cliente_id, 'Nenhum', r.caso_id);
-                }
-            }
-            $('#modal-tarefa').classList.add('active');
-        }
-
-        async function salvarTarefa(event) {
-            event.preventDefault();
-            showSpinner('Salvando tarefa...');
+        async function salvarTarefa(e) {
+            e.preventDefault();
+            showSpinner('Salvando...');
             const id = $('#tarefa-id').value;
-            const record = {
+            const dados = {
                 descricao: $('#tarefa-descricao').value,
                 prioridade: $('#tarefa-prioridade').value,
                 prazo_data: $('#tarefa-prazo').value,
-                cliente_id: $('#tarefa-cliente').value || null,
-                caso_id: $('#tarefa-caso').value || null,
-                status: 'Pendente'
+                cliente_id: $('#tarefa-cliente').value,
+                caso_id: $('#tarefa-caso').value,
+                status: 'Pendente' // Default status
             };
-            if (!record.descricao) {
-                hideSpinner();
-                return showNotif('danger', 'A descrição da tarefa é obrigatória.');
-            }
-
             try {
                 if (id) {
-                    await db.collection('tarefas').doc(id).update(record);
+                    // Ao editar, não alteramos o status, a menos que haja um campo para isso
+                    const doc = await db.collection('tarefas').doc(id).get();
+                    dados.status = doc.exists ? doc.data().status : 'Pendente';
+                    await db.collection('tarefas').doc(id).update(dados);
                 } else {
-                    await db.collection('tarefas').add(record);
+                    await db.collection('tarefas').add(dados);
                 }
-                showNotif('success', 'Tarefa salva!');
+                showNotif('success', 'Tarefa salva com sucesso!');
                 fecharModal('modal-tarefa');
                 renderTarefas();
-            } catch (error) {
-                showNotif('danger', 'Erro: ' + error.message);
+                loadDashboard(); // Atualiza o calendário
+            } catch (err) {
+                console.error(err);
+                showNotif('danger', 'Erro ao salvar a tarefa.');
             } finally {
                 hideSpinner();
             }
         }
 
-        async function concluirTarefa(id, isChecked) {
-            showSpinner('Atualizando tarefa...');
-            try {
-                await db.collection('tarefas').doc(id).update({ status: isChecked ? 'Concluída' : 'Pendente' });
-                showNotif('success', `Tarefa ${isChecked ? 'concluída' : 'marcada como pendente'}.`);
-                renderTarefas();
-            } catch (error) {
-                showNotif('danger', 'Erro ao atualizar tarefa: ' + error.message);
-            } finally {
-                hideSpinner();
-            }
-        }
-
-        async function abrirModalFin(tipo, id = null) {
-            $('#modal-fin form').reset();
-            $('#fin-id').value = '';
-            $('#fin-tipo').value = tipo;
-            $('#fin-titulo').innerText = tipo === 'Receber' ? 'Nova Receita' : 'Nova Despesa';
-            await populateSelect('fin-cliente', 'clientes', 'id', 'nome', null, 'Nenhum');
-            $('#fin-caso').innerHTML = '<option value="">Nenhum</option>';
-            if (id) {
-                const doc = await db.collection('fin').doc(id).get();
-                if (!doc.exists) return showNotif('danger', 'Lançamento não encontrado.');
-                const r = { id: doc.id, ...doc.data() };
-                $('#fin-titulo').innerText = `Editar ${r.tipo}`;
-                $('#fin-id').value = r.id;
-                $('#fin-tipo').value = r.tipo;
-                $('#fin-descricao').value = r.descricao;
-                $('#fin-categoria').value = r.categoria;
-                $('#fin-valor').value = r.valor;
-                $('#fin-data').value = r.data;
-                $('#fin-status').value = r.status_pg;
-                if (r.cliente_id) {
-                    await populateSelect('fin-cliente', 'clientes', 'id', 'nome', null, 'Nenhum', r.cliente_id);
-                    await populateSelect('fin-caso', 'casos', 'id', 'numero', r.cliente_id, 'Nenhum', r.caso_id);
-                }
-            }
-            $('#modal-fin').classList.add('active');
-        }
-
-        async function salvarFin(event) {
-            event.preventDefault();
-            showSpinner('Salvando lançamento...');
+        async function salvarFin(e) {
+            e.preventDefault();
+            showSpinner('Salvando...');
             const id = $('#fin-id').value;
-            const record = {
+            const dados = {
                 tipo: $('#fin-tipo').value,
                 descricao: $('#fin-descricao').value,
                 categoria: $('#fin-categoria').value,
-                valor: $('#fin-valor').value,
+                valor: parseFloat($('#fin-valor').value),
                 data: $('#fin-data').value,
                 status_pg: $('#fin-status').value,
-                cliente_id: $('#fin-cliente').value || null,
-                caso_id: $('#fin-caso').value || null,
+                cliente_id: $('#fin-cliente').value,
+                caso_id: $('#fin-caso').value,
             };
-            if (!record.descricao || !record.valor || !record.data) {
-                hideSpinner();
-                return showNotif('danger', 'Descrição, valor e data são obrigatórios.');
-            }
-
             try {
                 if (id) {
-                    await db.collection('fin').doc(id).update(record);
+                    await db.collection('fin').doc(id).update(dados);
                 } else {
-                    await db.collection('fin').add(record);
+                    await db.collection('fin').add(dados);
                 }
-                showNotif('success', 'Lançamento salvo!');
+                showNotif('success', 'Lançamento salvo com sucesso!');
                 fecharModal('modal-fin');
-                loadFinanceiro();
-                loadDashboard();
-            } catch (error) {
-                showNotif('danger', 'Erro: ' + error.message);
+                renderFinanceiro();
+                loadDashboard(); // Atualiza o resumo
+            } catch (err) {
+                console.error(err);
+                showNotif('danger', 'Erro ao salvar o lançamento.');
             } finally {
                 hideSpinner();
             }
         }
 
-        /* ------------- RELATÓRIOS ------------- */
-        async function gerarRelatorio(collectionName, fileName, columns) {
-            showSpinner(`Gerando relatório de ${collectionName}...`);
+        async function delRow(collection, id, callback) {
+            if (confirm('Tem certeza que deseja excluir este item? Esta ação não pode ser desfeita.')) {
+                showSpinner('Excluindo...');
+                try {
+                    await db.collection(collection).doc(id).delete();
+                    showNotif('success', 'Item excluído com sucesso.');
+                    if (callback) callback();
+                } catch (err) {
+                    console.error(err);
+                    showNotif('danger', 'Erro ao excluir o item.');
+                } finally {
+                    hideSpinner();
+                }
+            }
+        }
+
+        /* ------------- NAVEGAÇÃO E INICIALIZAÇÃO ------------- */
+
+        function abrirTab(index) {
+            $$('.tab-content').forEach(t => t.classList.remove('active'));
+            $$('nav button').forEach(b => b.classList.remove('active'));
+            $$('.sidebar-nav button').forEach(b => b.classList.remove('active'));
+
+            $(`#tab${index}`).classList.add('active');
+            $(`#nav${index}`)?.classList.add('active');
+            $(`#nav${index}-sidebar`)?.classList.add('active');
+
+            // Carrega os dados da aba quando ela é aberta
+            switch (index) {
+                case 0: loadDashboard(); break;
+                case 1: renderCasos(); break;
+                case 2: renderClientes(); break;
+                case 3: renderDocumentos(); break;
+                case 4: renderAgenda(); break;
+                case 5: renderTarefas(); break;
+                case 6: renderFinanceiro(); break;
+                case 7: renderCasosPorCliente(); break;
+            }
+        }
+
+        // Função para gerar relatórios CSV
+        async function gerarRelatorio(collectionName, fileName, headers) {
+            showSpinner('Gerando relatório...');
             try {
                 const snapshot = await db.collection(collectionName).get();
                 if (snapshot.empty) {
-                    showNotif('warning', 'Não há dados para gerar este relatório.');
+                    showNotif('info', 'Não há dados para gerar este relatório.');
                     return;
                 }
 
-                const columnKeys = Object.keys(columns);
-                const columnHeaders = Object.values(columns);
+                // Mapeamento de clientes e casos para evitar múltiplas buscas
+                let clientesMap, casosMap;
+                if (collectionName !== 'clientes') {
+                    const clientesSnapshot = await db.collection('clientes').get();
+                    clientesMap = new Map(clientesSnapshot.docs.map(doc => [doc.id, doc.data().nome]));
+                }
+                if (['docs', 'agenda', 'tarefas', 'fin'].includes(collectionName)) {
+                    const casosSnapshot = await db.collection('casos').get();
+                    casosMap = new Map(casosSnapshot.docs.map(doc => [doc.id, doc.data().numero]));
+                }
 
-                // Cache para clientes e casos para evitar buscas repetidas
-                const cache = { clientes: {}, casos: {} };
-
-                const dataPromises = snapshot.docs.map(async (doc) => {
+                let csvContent = "data:text/csv;charset=utf-8," + Object.values(headers).join(",") + "\n";
+                snapshot.forEach(doc => {
                     const data = { id: doc.id, ...doc.data() };
-                    if (data.cliente_id && !cache.clientes[data.cliente_id]) {
-                        const clienteDoc = await db.collection('clientes').doc(data.cliente_id).get();
-                        cache.clientes[data.cliente_id] = clienteDoc.exists ? clienteDoc.data().nome : 'N/A';
+
+                    // Adiciona nomes de cliente/caso se necessário
+                    if (clientesMap && data.cliente_id) {
+                        data.cliente_nome = clientesMap.get(data.cliente_id) || 'N/A';
                     }
-                    if (data.caso_id && !cache.casos[data.caso_id]) {
-                        const casoDoc = await db.collection('casos').doc(data.caso_id).get();
-                        cache.casos[data.caso_id] = casoDoc.exists ? casoDoc.data().numero : 'N/A';
+                    if (casosMap && data.caso_id) {
+                        data.caso_numero = casosMap.get(data.caso_id) || 'N/A';
                     }
-                    data.cliente_nome = data.cliente_id ? cache.clientes[data.cliente_id] : '';
-                    data.caso_numero = data.caso_id ? cache.casos[data.caso_id] : '';
-                    return data;
-                });
 
-                const data = await Promise.all(dataPromises);
-
-                let csvContent = "data:text/csv;charset=utf-8,";
-                csvContent += columnHeaders.join(',') + '\r\n';
-
-                data.forEach(item => {
-                    const row = columnKeys.map(key => {
-                        let val = item[key] === null || item[key] === undefined ? '' : item[key];
-                        let stringVal = String(val).replace(/\r\n|\n/g, ' ').replace(/"/g, '""');
-                        if (stringVal.includes(',')) {
-                            stringVal = `"${stringVal}"`;
+                    const row = Object.keys(headers).map(key => {
+                        let value = data[key] || '';
+                        // Formata valores para CSV (aspas duplas para strings com vírgula)
+                        value = String(value).replace(/"/g, '""');
+                        if (String(value).includes(',')) {
+                            value = `"${value}"`;
                         }
-                        return stringVal;
-                    }).join(',');
-                    csvContent += row + '\r\n';
+                        return value;
+                    });
+                    csvContent += row.join(",") + "\n";
                 });
 
                 const encodedUri = encodeURI(csvContent);
@@ -2880,119 +2709,113 @@
                 document.body.removeChild(link);
                 showNotif('success', 'Relatório gerado com sucesso!');
 
-            } catch (error) {
-                console.error("Erro ao gerar relatório:", error);
-                showNotif('danger', 'Falha ao gerar relatório: ' + error.message);
+            } catch (err) {
+                console.error("Erro ao gerar relatório: ", err);
+                showNotif('danger', 'Falha ao gerar o relatório.');
             } finally {
                 hideSpinner();
             }
         }
 
+        // --- Funções de Autenticação ---
 
-        /* ------------- AUTENTICAÇÃO E UI ------------- */
-
-        // Função de logout
-        const logout = () => {
-            localStorage.removeItem('loggedInUser');
-            window.location.reload(); // Recarrega a página para o estado inicial
-        };
-
-        // Função para fechar a sidebar
-        function closeSidebar() {
-            const sidebar = $('#sidebar');
-            const overlay = $('#overlay');
-            if (sidebar) sidebar.classList.remove('active');
-            if (overlay) overlay.classList.remove('active');
-        }
-
-        // Agrupa os event listeners do app principal para serem chamados após o login
-        function setupAppEventListeners() {
-            // Botão de Logout
-            const btnLogout = $('#btnLogout');
-            if (btnLogout) btnLogout.addEventListener('click', logout);
-
-            // Menu Hamburger
-            const hamburger = $('#hamburger-menu');
-            const sidebar = $('#sidebar');
-            const overlay = $('#overlay');
-
-            if (hamburger && sidebar && overlay) {
-                hamburger.addEventListener('click', () => {
-                    sidebar.classList.toggle('active');
-                    overlay.classList.toggle('active');
-                });
-
-                overlay.addEventListener('click', () => {
-                    closeSidebar();
-                });
-            }
-        }
-
-        // Função para lidar com o processo de login
-        async function handleLogin() {
-            const usuario = $('#login-usuario').value;
+        // Função de Login com Firebase Auth
+        async function fazerLogin() {
+            const email = $('#login-email').value;
             const senha = $('#login-senha').value;
             const erroDiv = $('#login-erro');
             erroDiv.style.display = 'none';
 
-            if (!usuario || !senha) {
-                erroDiv.innerText = 'Usuário e senha são obrigatórios.';
+            if (!email || !senha) {
+                erroDiv.innerText = 'Por favor, preencha e-mail e senha.';
                 erroDiv.style.display = 'block';
                 return;
             }
-            showSpinner('Entrando...');
 
-            let userFound = false;
+            showSpinner('Verificando...');
+
             try {
-                const snapshot = await db.collection('users').where('usuario', '==', usuario).get();
-                if (snapshot.empty) {
-                    erroDiv.innerText = 'Usuário ou senha inválidos.';
-                    erroDiv.style.display = 'block';
-                    return;
-                }
-
-                snapshot.forEach(doc => {
-                    if (doc.data().senha === senha) {
-                        userFound = true;
-                        localStorage.setItem('loggedInUser', JSON.stringify({ id: doc.id, ...doc.data() }));
-                        window.location.reload(); // Recarrega a página para o estado logado
-                    }
-                });
-
-                if (!userFound) {
-                    erroDiv.innerText = 'Usuário ou senha inválidos.';
-                    erroDiv.style.display = 'block';
-                }
+                await firebase.auth().signInWithEmailAndPassword(email, senha);
+                // O onAuthStateChanged vai cuidar de mostrar o app.
+                // Apenas notificamos o sucesso aqui.
+                showNotif('success', 'Login bem-sucedido!');
             } catch (error) {
-                console.error("Erro no login:", error);
-                erroDiv.innerText = 'Ocorreu um erro ao tentar fazer login.';
+                console.error("Erro no login: ", error.code);
+                switch (error.code) {
+                    case 'auth/user-not-found':
+                    case 'auth/wrong-password':
+                    case 'auth/invalid-credential':
+                        erroDiv.innerText = 'E-mail ou senha incorretos.';
+                        break;
+                    case 'auth/invalid-email':
+                        erroDiv.innerText = 'O formato do e-mail é inválido.';
+                        break;
+                    default:
+                        erroDiv.innerText = 'Erro ao tentar fazer login. Tente novamente.';
+                }
                 erroDiv.style.display = 'block';
             } finally {
-                if (!userFound) {
-                    hideSpinner();
-                }
+                hideSpinner();
             }
         }
 
-        // Event listener principal que roda quando o HTML está pronto
-        document.addEventListener('DOMContentLoaded', () => {
-            const loginPanel = $('#login-panel');
-            const appPanel = $('#app');
-            const loggedInUser = localStorage.getItem('loggedInUser');
-
-            // Se o usuário estiver logado, mostra o app. Senão, mostra o login.
-            if (loggedInUser) {
-                if (loginPanel) loginPanel.style.display = 'none';
-                if (appPanel) appPanel.style.display = 'block';
-                setupAppEventListeners();
-                abrirTab(0); // Abre a primeira tab
-            } else {
-                if (loginPanel) loginPanel.style.display = 'block';
-                if (appPanel) appPanel.style.display = 'none';
-                const btnLogin = $('#btnLogin');
-                if (btnLogin) btnLogin.addEventListener('click', handleLogin);
+        // Função de Logout com Firebase Auth
+        function fazerLogout() {
+            if (confirm('Deseja realmente sair?')) {
+                showSpinner('Saindo...');
+                firebase.auth().signOut().catch(error => {
+                    console.error('Erro ao fazer logout:', error);
+                    showNotif('danger', 'Ocorreu um erro ao sair.');
+                }).finally(() => {
+                    hideSpinner();
+                });
             }
-        })
+        }
+
+        // --- Event Listeners e Inicialização ---
+
+        $('#btnLogin').addEventListener('click', fazerLogin);
+        $('#btnLogout').addEventListener('click', fazerLogout);
+
+        // Hamburger Menu Logic
+        const hamburger = document.getElementById('hamburger-menu');
+        const sidebar = document.getElementById('sidebar');
+        const overlay = document.getElementById('overlay');
+
+        hamburger.addEventListener('click', () => {
+            sidebar.classList.toggle('active');
+            overlay.classList.toggle('active');
+        });
+
+        overlay.addEventListener('click', () => {
+            sidebar.classList.remove('active');
+            overlay.classList.remove('active');
+        });
+
+        function closeSidebar() {
+            sidebar.classList.remove('active');
+            overlay.classList.remove('active');
+        }
+
+        // Gerenciador de estado de autenticação
+        document.addEventListener('DOMContentLoaded', () => {
+            firebase.auth().onAuthStateChanged(user => {
+                if (user) {
+                    // Usuário está logado
+                    $('#login-panel').style.display = 'none';
+                    $('#app').style.display = 'block';
+                    abrirTab(0); // Carrega a primeira tab do dashboard
+                } else {
+                    // Usuário não está logado
+                    $('#login-panel').style.display = 'block';
+                    $('#app').style.display = 'none';
+                    $('#login-email').value = '';
+                    $('#login-senha').value = '';
+                }
+                // Esconde o spinner global caso esteja visível na transição
+                hideSpinner();
+            });
+        });
 
     </script>
 </body>
